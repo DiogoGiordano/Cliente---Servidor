@@ -1,8 +1,34 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 
+
+[Flags]
+public enum LogLevel
+{
+    None = 0,
+    Info = 1,
+    Error = 2
+}
+
 public class MultiThreadedServer
 {
+    public static LogLevel CurrentLogLevel = LogLevel.Info | LogLevel.Error;
+
+    public static void Log(string message, LogLevel level)
+    {
+        // Não exibe mensagens com o nível "None"
+        if (level == LogLevel.None)
+        {
+            return;
+        }
+
+        // Exibe as mensagens dos outros níveis de log
+        if ((CurrentLogLevel & level) == level)
+        {
+            Console.WriteLine(message);
+        }
+    }
+
     private static int counter = 0; // Contador de requisições
     private static readonly object lockObject = new object(); // Objeto para sincronizaçãows
 
@@ -16,12 +42,12 @@ public class MultiThreadedServer
         {
             server = new TcpListener(IPAddress.Any, port);
             server.Start();
-            Console.WriteLine("Servidor iniciado na porta " + port);
+            Log("Servidor iniciado na porta " + port, LogLevel.Info);
 
             while (true)
             {
                 TcpClient clientSocket = server.AcceptTcpClient();
-                Console.WriteLine("Cliente conectado: " + ((IPEndPoint)clientSocket.Client.RemoteEndPoint).Address + "Thread id: " + Thread.CurrentThread.ManagedThreadId);
+                Log("Cliente conectado: " + ((IPEndPoint)clientSocket.Client.RemoteEndPoint).Address, LogLevel.Info);
                 Task.Run(() => HandleClient(clientSocket)); // Lida com o cliente em uma nova tarefa
             }
         }
