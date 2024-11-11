@@ -4,6 +4,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Server-Client", "Server-Cli
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client", "Client\Client.csproj", "{FCCE49D0-36AC-4FB4-A981-5AE867CC2014}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiProcessServer", "MultiProcessServer\MultiProcessServer.csproj", "{E5AC8C1B-2323-44BD-ADF5-37E29DBA3645}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocketSelectorServer", "SocketSelectorServer\SocketSelectorServer.csproj", "{9EC3AC2E-656A-45A4-8BBA-7FA12BBEB6FD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +22,13 @@ Global
 		{FCCE49D0-36AC-4FB4-A981-5AE867CC2014}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FCCE49D0-36AC-4FB4-A981-5AE867CC2014}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FCCE49D0-36AC-4FB4-A981-5AE867CC2014}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E5AC8C1B-2323-44BD-ADF5-37E29DBA3645}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E5AC8C1B-2323-44BD-ADF5-37E29DBA3645}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E5AC8C1B-2323-44BD-ADF5-37E29DBA3645}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E5AC8C1B-2323-44BD-ADF5-37E29DBA3645}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9EC3AC2E-656A-45A4-8BBA-7FA12BBEB6FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9EC3AC2E-656A-45A4-8BBA-7FA12BBEB6FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9EC3AC2E-656A-45A4-8BBA-7FA12BBEB6FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9EC3AC2E-656A-45A4-8BBA-7FA12BBEB6FD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
