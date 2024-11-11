@@ -1,4 +1,6 @@
 ﻿using System.Net.Sockets;
+using System.IO;
+using System;
 
 [Flags]
 public enum LogLevel
@@ -11,51 +13,31 @@ public enum LogLevel
 class Client
 {
     public static LogLevel CurrentLogLevel = LogLevel.Info;
-    
+
     public static void Log(string message, LogLevel level)
     {
-        
-        // Exibe as mensagens dos outros níveis de log
-        if ((CurrentLogLevel & level) == LogLevel.Info || level == LogLevel.Error)
+        if ((CurrentLogLevel & level) == level)
         {
             Console.WriteLine(message);
         }
     }
 
-
     static void Main(string[] args)
     {
-
-        // Verifica se um argumento foi passado
-        if (args.Length < 1 || !int.TryParse(args[0], out int numberOfClients))
+        if (args.Length < 2 || !int.TryParse(args[0], out int pos) || !int.TryParse(args[1], out int value))
         {
-            Log("Uso: Client <numero_de_clientes>", LogLevel.Error);
+            Log("Uso: Client <posição> <valor>", LogLevel.Error);
             return;
         }
 
-        // Cria um array de threads
-        Thread[] clients = new Thread[numberOfClients];
-
-        for (int i = 0; i < numberOfClients; i++)
-        {
-            clients[i] = new Thread(() => StartClient()); // Inicia uma nova thread para cada cliente
-            clients[i].Start();
-        }
-
-        // Aguarda todas as threads terminarem
-        foreach (var clientThread in clients)
-        {
-            clientThread.Join();
-        }
-
-        Log("Todos os clientes emulados terminaram.", LogLevel.Info);
+        StartClient(pos, value);
     }
 
-    static void StartClient()
+    static void StartClient(int pos, int value)
     {
-        CurrentLogLevel &= ~LogLevel.None; // Desativa mensagens informativas
-        string serverIp = "127.0.0.1"; // IP do servidor
-        int port = 12345; // Porta do servidor
+        string parametros = $"{pos},{value}";
+        string serverIp = "127.0.0.1";
+        int port = 12345;
 
         try
         {
@@ -63,22 +45,15 @@ class Client
             using (StreamReader inStream = new StreamReader(client.GetStream()))
             using (StreamWriter outStream = new StreamWriter(client.GetStream()) { AutoFlush = true })
             {
-                // Envia o número de requisições que o cliente faz
-                int numberOfRequests = 1;
-                outStream.WriteLine(numberOfRequests); // Envia o número de requisições
+                outStream.WriteLine(parametros); 
 
-                for (int i = 0; i < numberOfRequests; i++)
-                {
-                    string? response = inStream.ReadLine();
-                    Log($"Cliente {Thread.CurrentThread.ManagedThreadId}: Resposta do servidor: {response}",
-                        LogLevel.None);
-                    outStream.WriteLine(""); // Envia uma linha em branco para continuar o ciclo
-                }
+                string? response = inStream.ReadLine();
+                Log($"Resposta do servidor: {response}", LogLevel.Info);
             }
         }
         catch (Exception e)
         {
-            Log($"Erro no cliente {Thread.CurrentThread.ManagedThreadId}: {e.Message}", LogLevel.Error);
+            Log($"Erro no cliente: {e.Message}", LogLevel.Error);
         }
     }
 }
