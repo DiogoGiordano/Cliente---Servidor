@@ -14,13 +14,13 @@ public enum LogLevel
 
 public class MultiThreadedServer
 {
-    public static int[] vetor = Enumerable.Range(100, 4000).ToArray();
+    public static int[] vetor = new int[1000];
+    
     public static LogLevel CurrentLogLevel = LogLevel.Info | LogLevel.Error;
 
     public static void Log(string message, LogLevel level)
     {
-        
-        if ((CurrentLogLevel & level) == LogLevel.Info || level == LogLevel.Error)
+        if ((CurrentLogLevel & level) == level)
         {
             Console.WriteLine(message);
         }
@@ -64,29 +64,34 @@ public class MultiThreadedServer
             using (StreamReader inStream = new StreamReader(clientSocket.GetStream()))
             using (StreamWriter outStream = new StreamWriter(clientSocket.GetStream()) { AutoFlush = true })
             {
-                string mensagem = inStream.ReadLine();
-                if (mensagem == null) return;
+                int numberOfRequests = int.Parse(inStream.ReadLine()!);
 
-                string[] parameters = mensagem.Split(',');
-
-                if (parameters.Length != 2 || 
-                    !int.TryParse(parameters[0], out int pos) || 
-                    !int.TryParse(parameters[1], out int value))
+                for (int i = 0; i < numberOfRequests; i++)
                 {
-                    Log("Erro: parâmetros inválidos.", LogLevel.Error);
-                    return;
-                }
+                    string mensagem = inStream.ReadLine();
+                    if (mensagem == null) return;
 
-                lock (lockObject)
-                {
-                    if (pos >= 0 && pos < vetor.Length)
+                    string[] parameters = mensagem.Split(',');
+
+                    if (parameters.Length != 2 || 
+                        !int.TryParse(parameters[0], out int pos) || 
+                        !int.TryParse(parameters[1], out int value))
                     {
-                        vetor[pos] = value; 
-                        Log($"Posição {pos} atualizada com o valor {vetor[pos]}", LogLevel.Info);
+                        outStream.WriteLine("Erro: parâmetros inválidos.");
+                        continue;
                     }
-                    else
+                    
                     {
-                        Log("Erro: posição fora do limite.", LogLevel.Error);
+                        lock (lockObject)
+                        if (pos >= 0 && pos < vetor.Length)
+                        {
+                            vetor[pos] = value; 
+                            outStream.WriteLine($"Posição {pos} atualizada com o valor {vetor[pos]}");
+                        }
+                        else
+                        {
+                            outStream.WriteLine("Erro: posição fora do limite.");
+                        }
                     }
                 }
             }

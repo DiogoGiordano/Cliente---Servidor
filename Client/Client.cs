@@ -24,13 +24,30 @@ class Client
 
     static void Main(string[] args)
     {
-        if (args.Length < 2 || !int.TryParse(args[0], out int pos) || !int.TryParse(args[1], out int value))
+        if (args.Length < 1 || !int.TryParse(args[0], out int nClients))
         {
-            Log("Uso: Client <posição> <valor>", LogLevel.Error);
+            Log("Uso: Client <posição> <valor> <nClients>", LogLevel.Error);
             return;
         }
+        
+        Thread[] clients = new Thread[nClients];
 
-        StartClient(pos, value);
+        for (int i = 0; i < nClients; i++)
+        {
+            Random random = new Random();
+            
+            int pos = random.Next(0, 1000);
+            int value = random.Next(0, 10000);
+            
+            
+            clients[i] = new Thread(() => StartClient(pos, value)); 
+            clients[i].Start();
+        }
+
+        foreach (var clientThread in clients)
+        {
+            clientThread.Join();
+        }
     }
 
     static void StartClient(int pos, int value)
@@ -38,6 +55,7 @@ class Client
         string parametros = $"{pos},{value}";
         string serverIp = "127.0.0.1";
         int port = 12345;
+        int numberRequests = 2;
 
         try
         {
@@ -45,10 +63,14 @@ class Client
             using (StreamReader inStream = new StreamReader(client.GetStream()))
             using (StreamWriter outStream = new StreamWriter(client.GetStream()) { AutoFlush = true })
             {
-                outStream.WriteLine(parametros); 
+                outStream.WriteLine(numberRequests); // Envia o número de requisições
 
-                string? response = inStream.ReadLine();
-                Log($"Resposta do servidor: {response}", LogLevel.Info);
+                for (int i = 0; i < numberRequests; i++)
+                {
+                    outStream.WriteLine(parametros); // Envia os parâmetros da requisição
+                    string? response = inStream.ReadLine();
+                    Log($"Resposta do servidor: {response}", LogLevel.Info);
+                }
             }
         }
         catch (Exception e)
