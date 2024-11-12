@@ -29,7 +29,16 @@ public class MultiThreadedServer
     }
 
     private static int counter = 0; 
-    private static readonly object lockObject = new object(); 
+
+    private static readonly object[] lockObjects = new object[vetor.Length]; 
+
+    static MultiThreadedServer()
+    {
+        for (int i = 0; i < vetor.Length; i++)
+        {
+            lockObjects[i] = new object();
+        }
+    }
 
     public static void Main(string[] args)
     {
@@ -71,9 +80,26 @@ public class MultiThreadedServer
                 
                 if (useLock)
                 {
-                    lock (lockObject) 
+                    for (int i = 0; i < numberOfRequests; i++)
                     {
-                        ProcessRequests(inStream, outStream, numberOfRequests);
+                        string mensagem = inStream.ReadLine();
+                        if (mensagem == null) return;
+
+                        int pos = int.Parse(mensagem);
+                        
+                        if (pos >= 0 && pos < vetor.Length)
+                        {
+                            lock (lockObjects[pos])
+                            {
+                                vetor[pos] = vetor[pos] + 1;
+                                counter++;
+                                outStream.WriteLine($"Posição {pos} atualizada com o valor {vetor[pos]}");
+                            }
+                        }
+                        else
+                        {
+                            outStream.WriteLine("Erro: posição fora do limite.");
+                        }
                     }
                 }
                 else

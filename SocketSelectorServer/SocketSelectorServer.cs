@@ -1,6 +1,9 @@
-﻿using System.Net;
+﻿using System;
+using System.IO;
+using System.Net;
 using System.Net.Sockets;
-using System.Text;
+using System.Linq;
+using System.Threading.Tasks;
 
 [Flags]
 public enum LogLevel
@@ -9,71 +12,43 @@ public enum LogLevel
     Info = 1,
     Error = 2
 }
-
-public class SocketSelectorServer
+public class MultiThreadedServer
 {
-    public static LogLevel CurrentLogLevel = LogLevel.Info | LogLevel.Error;
-
+    public static int[] vetor = new int[1000];
+    public static int soma = 0;
+    private static int counter = 0;
+    private static readonly object[] lockObjects = new object[vetor.Length];
+    
     public static void Log(string message, LogLevel level)
     {
-        if (level == LogLevel.None)
-        {
-            return;
-        }
-
-        if ((CurrentLogLevel & level) == level)
+        if (level == LogLevel.Error || level == LogLevel.Info || level == LogLevel.None)
         {
             Console.WriteLine(message);
         }
     }
-
-    private static int counter = 0;
-    private static readonly object lockObject = new object();
+    
+    static MultiThreadedServer()
+    {
+        for (int i = 0; i < vetor.Length; i++)
+        {
+            lockObjects[i] = new object();
+        }
+    }
 
     public static void Main(string[] args)
     {
         int port = 12345;
-
         TcpListener server = new TcpListener(IPAddress.Any, port);
         server.Start();
         Log("Servidor iniciado na porta " + port, LogLevel.Info);
-
-        List<Socket> clientSockets = new List<Socket>();
 
         try
         {
             while (true)
             {
-                // Aceita novas conexões de clientes
-                if (server.Pending())
-                {
-                    Socket clientSocket = server.AcceptSocket();
-                    clientSockets.Add(clientSocket);
-                    Log("Novo cliente conectado: " + ((IPEndPoint)clientSocket.RemoteEndPoint).Address, LogLevel.Info);
-                }
-
-                // Apenas executa a seleção se houver clientes conectados
-                if (clientSockets.Count > 0)
-                {
-                    List<Socket> readSockets = new List<Socket>(clientSockets);
-                    List<Socket> writeSockets = new List<Socket>(clientSockets);
-
-                    // Seleciona os sockets prontos
-                    Socket.Select(readSockets, writeSockets, null, 1000);
-
-                    foreach (var socket in readSockets)
-                    {
-                        if (!IsSocketConnected(socket))
-                        {
-                            Log("Cliente desconectado: " + ((IPEndPoint)socket.RemoteEndPoint).Address, LogLevel.Info);
-                            socket.Close();
-                            clientSockets.Remove(socket); // Remove o socket desconectado
-                            continue;
-                        }
-
-                        HandleClient(socket);
-                    }
-                }
+                TcpClient clientSocket = server.AcceptTcpClient();
+                Log("Cliente conectado: " + ((IPEndPoint)clientSocket.Client.RemoteEndPoint).Address, LogLevel.Info);
+                Task.Run(() => HandleClient(clientSocket));
             }
         }
         catch (Exception e)
@@ -82,49 +57,50 @@ public class SocketSelectorServer
         }
         finally
         {
-            foreach (var socket in clientSockets)
-            {
-                socket.Close();
-            }
             server.Stop();
         }
     }
 
-    private static void HandleClient(Socket clientSocket)
+    private static void HandleClient(TcpClient clientSocket)
     {
         try
         {
-            using (NetworkStream stream = new NetworkStream(clientSocket))
-            using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
-            using (StreamWriter writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true })
+            using (NetworkStream stream = clientSocket.GetStream())
+            using (StreamReader reader = new StreamReader(stream))
+            using (StreamWriter writer = new StreamWriter(stream) { AutoFlush = true })
             {
-                string requestLine = reader.ReadLine();
-                if (int.TryParse(requestLine, out int numberOfRequests))
-                {
-                    for (int i = 0; i < numberOfRequests; i++)
-                    {
-                        int currentValue;
-                        lock (lockObject)
-                        {
-                            currentValue = ++counter;
-                        }
+                int numberOfRequests = int.Parse(reader.ReadLine());
 
-                        writer.WriteLine(currentValue); // Envia o valor ao cliente
-                        reader.ReadLine(); // Aguarda confirmação do cliente
+                for (int i = 0; i < numberOfRequests; i++)
+                {
+                    string mensagem = reader.ReadLine();
+                    if (mensagem == null) return;
+
+                    int pos = int.Parse(mensagem);
+
+                    if (pos >= 0 && pos < vetor.Length)
+                    {
+                        lock (lockObjects[pos])
+                        {
+                            vetor[pos]++;
+                            counter++;
+                            writer.WriteLine(counter);
+                        }
+                    }
+                    else
+                    {
+                        writer.WriteLine("Erro: posição fora do limite.");
                     }
                 }
+                
+                soma = vetor.Sum();
+                writer.WriteLine(counter); 
+                writer.WriteLine(soma);     
             }
         }
         catch (IOException e)
         {
-            Log("Erro na comunicação com o cliente: " + e.Message, LogLevel.Error);
-            clientSocket.Close(); // Fecha o socket do cliente em caso de erro
+            Log("Erro na comunicação com o cliente: ", LogLevel.Error);
         }
-    }
-
-    private static bool IsSocketConnected(Socket socket)
-    {
-        // Verifica se o socket ainda está conectado
-        return !(socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0);
     }
 }
