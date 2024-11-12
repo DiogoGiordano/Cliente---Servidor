@@ -16,21 +16,18 @@ public class MultiThreadedServer
 {
     public static int[] vetor = new int[1000];
     public static int soma = 0;
-    public static LogLevel CurrentLogLevel = LogLevel.Info | LogLevel.Error;
-    
-    public static bool useLock = false;
+    private static int counter = 0; 
+    private static readonly object[] lockObjects = new object[vetor.Length]; 
+    public static bool useLock = true;
 
     public static void Log(string message, LogLevel level)
     {
-        if (level == LogLevel.Error || level == LogLevel.Info || level == LogLevel.None)
+        if (level == LogLevel.Error || level == LogLevel.Info)
         {
             Console.WriteLine(message);
         }
     }
-
-    private static int counter = 0; 
-
-    private static readonly object[] lockObjects = new object[vetor.Length]; 
+   
 
     static MultiThreadedServer()
     {
@@ -55,7 +52,7 @@ public class MultiThreadedServer
             while (true)
             {
                 TcpClient clientSocket = server.AcceptTcpClient();
-                Log("Cliente conectado: " + ((IPEndPoint)clientSocket.Client.RemoteEndPoint!)?.Address, LogLevel.Info);
+                Log("Cliente conectado: " + ((IPEndPoint)clientSocket.Client.RemoteEndPoint!)?.Address, LogLevel.None);
                 Task.Run(() => HandleClient(clientSocket));
             }
         }
@@ -73,8 +70,9 @@ public class MultiThreadedServer
     {
         try
         {
-            using (StreamReader inStream = new StreamReader(clientSocket.GetStream()))
-            using (StreamWriter outStream = new StreamWriter(clientSocket.GetStream()) { AutoFlush = true })
+            using (NetworkStream stream = clientSocket.GetStream())
+            using (StreamReader inStream = new StreamReader(stream))
+            using (StreamWriter outStream = new StreamWriter(stream) { AutoFlush = true })
             {
                 int numberOfRequests = int.Parse(inStream.ReadLine()!);
                 
@@ -92,7 +90,6 @@ public class MultiThreadedServer
                             lock (lockObjects[pos])
                             {
                                 vetor[pos] = vetor[pos] + 1;
-                                counter++;
                                 outStream.WriteLine($"Posição {pos} atualizada com o valor {vetor[pos]}");
                             }
                         }
@@ -101,6 +98,7 @@ public class MultiThreadedServer
                             outStream.WriteLine("Erro: posição fora do limite.");
                         }
                     }
+                    counter++;
                 }
                 else
                 {
@@ -134,7 +132,6 @@ public class MultiThreadedServer
             if (pos >= 0 && pos < vetor.Length)
             {
                 vetor[pos] = vetor[pos] + 1;
-                counter++;
                 outStream.WriteLine($"Posição {pos} atualizada com o valor {vetor[pos]}");
             }
             else
@@ -142,5 +139,6 @@ public class MultiThreadedServer
                 outStream.WriteLine("Erro: posição fora do limite.");
             }
         }
+        counter++;
     }
 }

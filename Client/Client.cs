@@ -19,7 +19,7 @@ class Client
 
     public static void Log(string message, LogLevel level)
     {
-        if ((level == LogLevel.Error) || (level == LogLevel.Info))
+        if (level == LogLevel.Error || level == LogLevel.Info)
         {
             Console.WriteLine(message);
         }
@@ -57,7 +57,7 @@ class Client
     {
         string serverIp = "127.0.0.1";
         int port = 12345;
-        int numberRequests = 5;
+        int numberRequests = 1;
 
         try
         {
