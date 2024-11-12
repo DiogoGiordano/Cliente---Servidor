@@ -14,9 +14,12 @@ class Client
 {
     public static LogLevel CurrentLogLevel = LogLevel.Info;
 
+    public static int counter = 0;
+    public static int soma = 0;
+
     public static void Log(string message, LogLevel level)
     {
-        if ((CurrentLogLevel & level) == level)
+        if ((level == LogLevel.Error) || (level == LogLevel.Info))
         {
             Console.WriteLine(message);
         }
@@ -26,21 +29,17 @@ class Client
     {
         if (args.Length < 1 || !int.TryParse(args[0], out int nClients))
         {
-            Log("Uso: Client <posição> <valor> <nClients>", LogLevel.Error);
+            Log("Uso: Client <nClients>", LogLevel.Error);
             return;
         }
-        
+
         Thread[] clients = new Thread[nClients];
+        Random random = new Random();
 
         for (int i = 0; i < nClients; i++)
         {
-            Random random = new Random();
-            
             int pos = random.Next(0, 1000);
-            int value = random.Next(0, 10000);
-            
-            
-            clients[i] = new Thread(() => StartClient(pos, value)); 
+            clients[i] = new Thread(() => StartClient(pos));
             clients[i].Start();
         }
 
@@ -48,14 +47,17 @@ class Client
         {
             clientThread.Join();
         }
+
+        Log($"Contador do servidor: {counter}", LogLevel.Info);
+        Log($"Soma de todos os valores do vetor: {soma}", LogLevel.Info);
     }
 
-    static void StartClient(int pos, int value)
+
+    static void StartClient(int pos)
     {
-        string parametros = $"{pos},{value}";
         string serverIp = "127.0.0.1";
         int port = 12345;
-        int numberRequests = 2;
+        int numberRequests = 5;
 
         try
         {
@@ -63,14 +65,19 @@ class Client
             using (StreamReader inStream = new StreamReader(client.GetStream()))
             using (StreamWriter outStream = new StreamWriter(client.GetStream()) { AutoFlush = true })
             {
-                outStream.WriteLine(numberRequests); // Envia o número de requisições
+                outStream.WriteLine(numberRequests);
 
                 for (int i = 0; i < numberRequests; i++)
                 {
-                    outStream.WriteLine(parametros); // Envia os parâmetros da requisição
+                    outStream.WriteLine(pos); 
                     string? response = inStream.ReadLine();
-                    Log($"Resposta do servidor: {response}", LogLevel.Info);
+                    Log($"Resposta do servidor: {response}", LogLevel.None);
                 }
+
+                string? responseCounter = inStream.ReadLine();
+                counter = responseCounter == null ? 0 : int.Parse(responseCounter);
+                string? responseSoma = inStream.ReadLine();
+                soma = responseSoma == null ? 0 : int.Parse(responseSoma); 
             }
         }
         catch (Exception e)

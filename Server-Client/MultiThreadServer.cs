@@ -15,18 +15,21 @@ public enum LogLevel
 public class MultiThreadedServer
 {
     public static int[] vetor = new int[1000];
-    
+    public static int soma = 0;
     public static LogLevel CurrentLogLevel = LogLevel.Info | LogLevel.Error;
+    
+    public static bool useLock = false;
 
     public static void Log(string message, LogLevel level)
     {
-        if ((CurrentLogLevel & level) == level)
+        if (level == LogLevel.Error || level == LogLevel.Info || level == LogLevel.None)
         {
             Console.WriteLine(message);
         }
     }
 
-    private static readonly object lockObject = new object();
+    private static int counter = 0; 
+    private static readonly object lockObject = new object(); 
 
     public static void Main(string[] args)
     {
@@ -65,35 +68,22 @@ public class MultiThreadedServer
             using (StreamWriter outStream = new StreamWriter(clientSocket.GetStream()) { AutoFlush = true })
             {
                 int numberOfRequests = int.Parse(inStream.ReadLine()!);
-
-                for (int i = 0; i < numberOfRequests; i++)
+                
+                if (useLock)
                 {
-                    string mensagem = inStream.ReadLine();
-                    if (mensagem == null) return;
-
-                    string[] parameters = mensagem.Split(',');
-
-                    if (parameters.Length != 2 || 
-                        !int.TryParse(parameters[0], out int pos) || 
-                        !int.TryParse(parameters[1], out int value))
+                    lock (lockObject) 
                     {
-                        outStream.WriteLine("Erro: parâmetros inválidos.");
-                        continue;
-                    }
-                    
-                    {
-                        lock (lockObject)
-                        if (pos >= 0 && pos < vetor.Length)
-                        {
-                            vetor[pos] = value; 
-                            outStream.WriteLine($"Posição {pos} atualizada com o valor {vetor[pos]}");
-                        }
-                        else
-                        {
-                            outStream.WriteLine("Erro: posição fora do limite.");
-                        }
+                        ProcessRequests(inStream, outStream, numberOfRequests);
                     }
                 }
+                else
+                {
+                    ProcessRequests(inStream, outStream, numberOfRequests);
+                }
+
+                soma = vetor.Sum();
+                outStream.WriteLine(counter.ToString()); 
+                outStream.WriteLine(soma.ToString());
             }
         }
         catch (IOException e)
@@ -103,6 +93,28 @@ public class MultiThreadedServer
         finally
         {
             clientSocket.Close();
+        }
+    }
+
+    private static void ProcessRequests(StreamReader inStream, StreamWriter outStream, int numberOfRequests)
+    {
+        for (int i = 0; i < numberOfRequests; i++)
+        {
+            string mensagem = inStream.ReadLine();
+            if (mensagem == null) return;
+
+            int pos = int.Parse(mensagem);
+
+            if (pos >= 0 && pos < vetor.Length)
+            {
+                vetor[pos] = vetor[pos] + 1;
+                counter++;
+                outStream.WriteLine($"Posição {pos} atualizada com o valor {vetor[pos]}");
+            }
+            else
+            {
+                outStream.WriteLine("Erro: posição fora do limite.");
+            }
         }
     }
 }
