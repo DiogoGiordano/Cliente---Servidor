@@ -1,19 +1,14 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 
-[Flags]
-public enum LogLevel
+public class ProcessServer
 {
-    None = 0,
-    Info = 1,
-    Error = 2
-}
+    
 
-public class MultiProcessServer
-{
+    
     public static int[] vetor = new int[1000];
     public static int soma = 0;
-    public static LogLevel CurrentLogLevel = LogLevel.Info | LogLevel.Error;
+    public static LogLevel CurrentLogLevel = LogLevel.Info | LogLevel.Basic;
 
     public static bool useLock = false;
     public static SemaphoreSlim processPool; // Pool de processos
@@ -22,7 +17,7 @@ public class MultiProcessServer
     private static int counter = 0;
 
     // Construtor estático para inicializar os Mutexes
-    static MultiProcessServer()
+    static ProcessServer()
     {
         // Inicializa os mutexes para cada posição
         for (int i = 0; i < vetor.Length; i++)
@@ -33,7 +28,7 @@ public class MultiProcessServer
 
     public static void Log(string message, LogLevel level)
     {
-        if (level == LogLevel.Error || level == LogLevel.Info || level == LogLevel.None)
+        if (level == LogLevel.Basic || level == LogLevel.Info || level == LogLevel.None)
         {
             Console.WriteLine(message);
         }
@@ -90,7 +85,7 @@ public class MultiProcessServer
         }
         catch (Exception e)
         {
-            Log($"Erro ao iniciar o processo para o cliente: {e.Message}", LogLevel.Error);
+            Log($"Erro ao iniciar o processo para o cliente: {e.Message}", LogLevel.Basic);
         }
     }
 
@@ -120,7 +115,7 @@ public class MultiProcessServer
         }
         catch (IOException e)
         {
-            Log("Erro na comunicação com o cliente: " + e.Message, LogLevel.Error);
+            Log("Erro na comunicação com o cliente: " + e.Message, LogLevel.Basic);
         }
         finally
         {

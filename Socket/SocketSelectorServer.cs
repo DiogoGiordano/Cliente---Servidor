@@ -4,58 +4,56 @@ using System.Net;
 using System.Net.Sockets;
 using System.Linq;
 using System.Threading.Tasks;
+using Server_Client;
 
-[Flags]
-public enum LogLevel
+public class SocketSelectorServer
 {
-    None = 0,
-    Info = 1,
-    Error = 2
-}
-
-public class MultiThreadedServer
-{
-    public static int[] vetor = new int[1000];
-    public static int soma = 0;
-    private static int counter = 0;
-    private static readonly object[] lockObjects = new object[vetor.Length];
-    public static bool useLock = true;
-
-    public static void Log(string message, LogLevel level)
-    {
-        if (level == LogLevel.Error || level == LogLevel.Info)
-        {
-            Console.WriteLine(message);
-        }
-    }
-
-    static MultiThreadedServer()
-    {
-        for (int i = 0; i < vetor.Length; i++)
-        {
-            lockObjects[i] = new object();
-        }
-    }
+    private static int[] _vetor;
+    private static int _tamanhoVetor;
+    private static int _port;
+    private static int _soma;
+    private static int _counter;
+    private static object[] _lockObjects;
+    private static bool _useLock;
+    private static LogLevel _currentLogLevel;
+    private static Teste _teste;
 
     public static void Main(string[] args)
     {
-        int port = 12345;
+        if (args.Length < 3 || !int.TryParse(args[0], out int tamanhoVetor) || !int.TryParse(args[1], out int port) || !Enum.TryParse(args[2], out Server_Client.LogLevel currentLogLevel) || !bool.TryParse(args[3], out bool useLock))
+        {
+            Console.WriteLine("Uso: Client <Tamanho do Vetor> <Port> <Log Level> <Usar Lock>");
+            return;
+        }
+
+        _tamanhoVetor = tamanhoVetor;
+        _port = port;
+        _teste = new Teste(currentLogLevel);
+        _useLock = useLock;
+        _vetor = new int[_tamanhoVetor];
+        _lockObjects = new object[_tamanhoVetor];
+
+        for (int i = 0; i < _vetor.Length; i++)
+        { 
+            _lockObjects[i] = new object();
+        }
+        
         TcpListener server = new TcpListener(IPAddress.Any, port);
         server.Start();
-        Log("Servidor iniciado na porta " + port, LogLevel.Info);
+        Teste.log("Servidor iniciado na porta " + port, Server_Client.LogLevel.Basic);
 
         try
         {
             while (true)
             {
                 TcpClient clientSocket = server.AcceptTcpClient();
-                Log("Cliente conectado: " + ((IPEndPoint)clientSocket.Client.RemoteEndPoint).Address, LogLevel.None);
+                Teste.log("Cliente conectado: " + ((IPEndPoint)clientSocket.Client.RemoteEndPoint).Address, Server_Client.LogLevel.Info);
                 Task.Run(() => HandleClient(clientSocket));
             }
         }
         catch (Exception e)
         {
-            Log("Erro no servidor: " + e.Message, LogLevel.Error);
+            Teste.log("Erro no servidor: " + e.Message, Server_Client.LogLevel.Basic);
         }
         finally
         {
@@ -72,7 +70,7 @@ public class MultiThreadedServer
             using (StreamWriter writer = new StreamWriter(stream) { AutoFlush = true })
             {
                 int numberOfRequests = int.Parse(reader.ReadLine());
-                if (useLock)
+                if (_useLock)
                 {
                     for (int i = 0; i < numberOfRequests; i++)
                     {
@@ -81,12 +79,12 @@ public class MultiThreadedServer
 
                         int pos = int.Parse(mensagem);
 
-                        if (pos >= 0 && pos < vetor.Length)
+                        if (pos >= 0 && pos < _vetor.Length)
                         {
-                            lock (lockObjects[pos])
+                            lock (_lockObjects[pos])
                             {
-                                vetor[pos]++;
-                                writer.WriteLine(counter);
+                                _vetor[pos]++;
+                                writer.WriteLine(_counter);
                             }
                         }
                         else
@@ -94,21 +92,21 @@ public class MultiThreadedServer
                             writer.WriteLine("Erro: posição fora do limite.");
                         }
                     }
-                    counter++;
+                    _counter++;
                 }
                 else
                 {
                     ProcessRequests(reader, writer, numberOfRequests);
                 }
 
-                soma = vetor.Sum();
-                writer.WriteLine(counter);
-                writer.WriteLine(soma);
+                _soma = _vetor.Sum();
+                writer.WriteLine(_counter);
+                writer.WriteLine(_soma);
             }
         }
         catch (IOException e)
         {
-            Log("Erro na comunicação com o cliente: ", LogLevel.Error);
+            Teste.log("Erro na comunicação com o cliente: ", Server_Client.LogLevel.Basic);
         }
     }
 
@@ -121,11 +119,11 @@ public class MultiThreadedServer
 
             int pos = int.Parse(mensagem);
 
-            if (pos >= 0 && pos < vetor.Length)
+            if (pos >= 0 && pos < _vetor.Length)
             {
                 {
-                    vetor[pos]++;
-                    writer.WriteLine(counter);
+                    _vetor[pos]++;
+                    writer.WriteLine(_counter);
                 }
             }
             else
@@ -133,7 +131,6 @@ public class MultiThreadedServer
                 writer.WriteLine("Erro: posição fora do limite.");
             }
         }
-
-        counter++;
+        _counter++;
     }
 }
