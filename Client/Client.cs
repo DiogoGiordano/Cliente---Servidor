@@ -103,7 +103,7 @@ class Client
                             $"Thread {Thread.CurrentThread.ManagedThreadId}: {operation} {_pos} - Resposta do servidor: {response}",
                             LogLevel.Info);
 
-                        _pos = (_pos + 1) % vectorSize;
+                        _pos = (_pos + 1) % vectorSize; // Garante que o índice não ultrapasse o tamanho do vetor
                     }
 
                     string? responseCounter = inStream.ReadLine();
