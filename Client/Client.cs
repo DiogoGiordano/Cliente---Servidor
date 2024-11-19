@@ -13,6 +13,7 @@ class Client
     private static int _counter = 0;
     private static int _soma = 0;
     private static string _sequence;
+    private static int _pos;
 
     public static void Log(string message, LogLevel level)
     {
@@ -36,8 +37,7 @@ class Client
 
         for (int i = 0; i < _nClientes; i++)
         {
-            int pos = random.Next(0, 1000); 
-            clients[i] = new Thread(() => StartClient(pos));
+            clients[i] = new Thread(() => StartClient());
             clients[i].Start();
         }
 
@@ -69,7 +69,7 @@ class Client
         return true;
     }
 
-    static void StartClient(int pos)
+    static void StartClient()
     {
         try
         {
@@ -80,32 +80,43 @@ class Client
                 using (StreamReader inStream = new StreamReader(client.GetStream()))
                 using (StreamWriter outStream = new StreamWriter(client.GetStream()) { AutoFlush = true })
                 {
+                    string? vectorSizeMessage = inStream.ReadLine();
+                    if (!int.TryParse(vectorSizeMessage, out int vectorSize))
+                    {
+                        Log($"Erro ao receber o tamanho do vetor: {vectorSizeMessage}", LogLevel.Basic);
+                        return;
+                    }
+
+                    Random random = new Random();
+                    _pos = random.Next(0, vectorSize);
+
                     int totalRequests = _nReads + _nWrites;
                     outStream.WriteLine(totalRequests);
 
                     for (int i = 0; i < totalRequests; i++)
                     {
                         string operation = GetNextOperation(i);
-                        outStream.WriteLine($"{operation} {pos}");
+                        outStream.WriteLine($"{operation} {_pos}");
 
                         string? response = inStream.ReadLine();
-                        Log($"Thread {Thread.CurrentThread.ManagedThreadId}: {operation} {pos} - Resposta do servidor: {response}", LogLevel.Info);
+                        Log(
+                            $"Thread {Thread.CurrentThread.ManagedThreadId}: {operation} {_pos} - Resposta do servidor: {response}",
+                            LogLevel.Info);
 
-                        pos = (pos + 1) % 1000; 
+                        _pos = (_pos + 1) % vectorSize;
                     }
 
                     string? responseCounter = inStream.ReadLine();
                     if (int.TryParse(responseCounter, out int parsedCounter))
                     {
-                        _counter = parsedCounter; 
+                        _counter = parsedCounter;
                     }
 
                     string? responseSoma = inStream.ReadLine();
                     if (int.TryParse(responseSoma, out int parsedSoma))
                     {
-                        _soma = parsedSoma; 
+                        _soma = parsedSoma;
                     }
-
                 }
             }
         }
@@ -122,7 +133,7 @@ class Client
             "RW" => index < _nReads ? "READ" : "WRITE",
             "WR" => index < _nWrites ? "WRITE" : "READ",
             "Intercalado" => index % 2 == 0 ? "READ" : "WRITE",
-            _ => "READ" // Padrão
+            _ => "READ" 
         };
     }
 
