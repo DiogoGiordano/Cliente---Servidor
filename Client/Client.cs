@@ -39,14 +39,14 @@ class Client
 
         for (int i = 0; i < _nClientes; i++)
         {
-            int pos = random.Next(0, 1000); // Gera posições aleatórias iniciais
+            int pos = random.Next(0, 1000); 
             clients[i] = new Thread(() => StartClient(pos));
             clients[i].Start();
         }
 
         foreach (var clientThread in clients)
         {
-            clientThread.Join(); // Aguarda todas as threads concluírem
+            clientThread.Join(); 
         }
 
         Log($"Resultado final - Contador do servidor: {_counter}, Soma do vetor: {_soma}", LogLevel.Basic);
@@ -94,19 +94,19 @@ class Client
                         string? response = inStream.ReadLine();
                         Log($"Thread {Thread.CurrentThread.ManagedThreadId}: {operation} {pos} - Resposta do servidor: {response}", LogLevel.Info);
 
-                        pos = (pos + 1) % 1000; // Incrementa a posição circularmente
+                        pos = (pos + 1) % 1000; 
                     }
 
                     string? responseCounter = inStream.ReadLine();
                     if (int.TryParse(responseCounter, out int parsedCounter))
                     {
-                        _counter = parsedCounter; // Substitui o valor diretamente
+                        _counter = parsedCounter; 
                     }
 
                     string? responseSoma = inStream.ReadLine();
                     if (int.TryParse(responseSoma, out int parsedSoma))
                     {
-                        _soma = parsedSoma; // Substitui o valor diretamente
+                        _soma = parsedSoma; 
                     }
 
                 }
