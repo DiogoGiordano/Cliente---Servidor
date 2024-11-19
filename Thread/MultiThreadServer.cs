@@ -14,14 +14,18 @@ public class MultiThreadedServer
     private static LogLevel _currentLogLevel;
     private static Teste _teste;
 
-
     public static void Main(string[] args)
     {
-        if (args.Length < 3 || !int.TryParse(args[0], out int tamanhoVetor) || !int.TryParse(args[1], out int port) || !Enum.TryParse(args[2], out Server_Client.LogLevel currentLogLevel) || !bool.TryParse(args[3], out bool useLock))
+        if (args.Length < 3 || !int.TryParse(args[0], out int tamanhoVetor) || 
+            !int.TryParse(args[1], out int port) || 
+            !Enum.TryParse(args[2], out Server_Client.LogLevel currentLogLevel) || 
+            !bool.TryParse(args[3], out bool useLock))
         {
-            Console.WriteLine("Uso: Client <Tamanho do Vetor> <Port> <Log Level> <Usar Lock>");
+            Console.WriteLine("Uso: Server <Tamanho do Vetor> <Port> <Log Level> <Usar Lock>");
             return;
         }
+        
+        //dotnet run -- 1000 12345 2 true
 
         _tamanhoVetor = tamanhoVetor;
         _port = port;
@@ -39,7 +43,6 @@ public class MultiThreadedServer
         
         try
         {
-            
             server = new TcpListener(IPAddress.Any, _port);
             server.Start();
             Teste.log("Servidor iniciado na porta " + _port, Server_Client.LogLevel.Basic);
@@ -60,86 +63,108 @@ public class MultiThreadedServer
         }
         finally
         {
-            Console.WriteLine("finally");
             server?.Stop();
         }
     }
 
     private static void HandleClient(TcpClient clientSocket)
+{
+    try
     {
-        try
+        using (NetworkStream stream = clientSocket.GetStream())
+        using (StreamReader inStream = new StreamReader(stream))
+        using (StreamWriter outStream = new StreamWriter(stream) { AutoFlush = true })
         {
-            using (NetworkStream stream = clientSocket.GetStream())
-            using (StreamReader inStream = new StreamReader(stream))
-            using (StreamWriter outStream = new StreamWriter(stream) { AutoFlush = true })
+            int numberOfRequests = int.Parse(inStream.ReadLine()!);
+
+            for (int i = 0; i < numberOfRequests; i++)
             {
-                int numberOfRequests = int.Parse(inStream.ReadLine()!);
+                string mensagem = inStream.ReadLine();
+                if (mensagem == null) return;
+
+                string[] parts = mensagem.Split(' ');
+                string operation = parts[0];
+                int pos = int.Parse(parts[1]);
 
                 if (_useLock)
                 {
-                    for (int i = 0; i < numberOfRequests; i++)
-                    {
-                        string mensagem = inStream.ReadLine();
-                        if (mensagem == null) return;
-
-                        int pos = int.Parse(mensagem);
-
-                        if (pos >= 0 && pos < _vetor.Length)
-                        {
-                            lock (_lockObjects[pos])
-                            {
-                                _vetor[pos] = _vetor[pos] + 1;
-                                outStream.WriteLine($"Posição {pos} atualizada com o valor {_vetor[pos]}");
-                            }
-                        }
-                        else
-                        {
-                            outStream.WriteLine("Erro: posição fora do limite.");
-                        }
-                    }
-
-                    _counter++;
+                    ProcessRequestWithLock(outStream, operation, pos);
                 }
                 else
                 {
-                    ProcessRequests(inStream, outStream, numberOfRequests);
+                    ProcessRequestWithoutLock(outStream, operation, pos);
                 }
-
-                _soma = _vetor.Sum();
-                outStream.WriteLine(_counter.ToString());
-                outStream.WriteLine(_soma.ToString());
             }
-        }
-        catch (IOException e)
-        {
-            Teste.log("Erro na comunicação com o cliente: " + e.Message, Server_Client.LogLevel.Basic);
-        }
-        finally
-        {
-            clientSocket.Close();
+
+            // Envia os valores finais (_counter e _soma) para o cliente.
+            outStream.WriteLine(_counter.ToString());
+            outStream.WriteLine(_soma.ToString());
         }
     }
-
-    private static void ProcessRequests(StreamReader inStream, StreamWriter outStream, int numberOfRequests)
+    catch (IOException e)
     {
-        for (int i = 0; i < numberOfRequests; i++)
+        Teste.log("Erro na comunicação com o cliente: " + e.Message, Server_Client.LogLevel.Basic);
+    }
+    finally
+    {
+        clientSocket.Close();
+    }
+}
+
+private static void ProcessRequestWithLock(StreamWriter outStream, string operation, int pos)
+{
+    if (pos >= 0 && pos < _vetor.Length)
+    {
+        lock (_lockObjects[pos])
         {
-            string mensagem = inStream.ReadLine();
-            if (mensagem == null) return;
-
-            int pos = int.Parse(mensagem);
-
-            if (pos >= 0 && pos < _vetor.Length)
+            if (operation.Equals("READ", StringComparison.OrdinalIgnoreCase))
             {
-                _vetor[pos] = _vetor[pos] + 1;
-                outStream.WriteLine($"Posição {pos} atualizada com o valor {_vetor[pos]}");
+                int value = _vetor[pos];
+                outStream.WriteLine($"READ {pos}: {value}");
             }
-            else
+            else if (operation.Equals("WRITE", StringComparison.OrdinalIgnoreCase))
             {
-                outStream.WriteLine("Erro: posição fora do limite.");
+                // Incrementa o valor no vetor.
+                _vetor[pos] += 1;
+
+                // Incrementa a soma total de forma thread-safe.
+                Interlocked.Add(ref _soma, 1);
+
+                outStream.WriteLine($"WRITE {pos}: {_vetor[pos]}");
             }
         }
-
-        _counter++;
     }
+    else
+    {
+        outStream.WriteLine("Erro: posição fora do limite.");
+    }
+}
+
+private static void ProcessRequestWithoutLock(StreamWriter outStream, string operation, int pos)
+{
+    if (pos >= 0 && pos < _vetor.Length)
+    {
+        if (operation.Equals("READ", StringComparison.OrdinalIgnoreCase))
+        {
+            int value = _vetor[pos];
+            outStream.WriteLine($"READ {pos}: {value}");
+        }
+        else if (operation.Equals("WRITE", StringComparison.OrdinalIgnoreCase))
+        {
+            // Incrementa o valor no vetor.
+            _vetor[pos] += 1;
+
+            // Incrementa a soma total de forma thread-safe.
+            Interlocked.Add(ref _soma, 1);
+
+            outStream.WriteLine($"WRITE {pos}: {_vetor[pos]}");
+        }
+    }
+    else
+    {
+        outStream.WriteLine("Erro: posição fora do limite.");
+    }
+}
+
+
 }
