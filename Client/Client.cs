@@ -2,7 +2,7 @@
 using System.IO;
 using System;
 using System.Net;
-using Server_Client;
+using System.Threading;
 
 [Flags]
 public enum LogLevel
@@ -16,12 +16,12 @@ class Client
 {
     private static int _nClientes;
     private static LogLevel _currentLogLevel;
-    private static Teste _teste;
     private static int _port;
     private static IPAddress? _ipAddress;
-    private static int _nRequisitos;
+    private static int _nReads;
+    private static int _nWrites;
+    private static string _sequence;
     private static int _counter = 0;
-    private static int _soma = 0;
 
     public static void Log(string message, LogLevel level)
     {
@@ -31,35 +31,36 @@ class Client
         }
     }
 
-//dotnet run 100 127.0.0.1 12345 100 2
-
+    // Exemplo de uso: dotnet run 10 127.0.0.1 12345 5 5 Info RW
     static void Main(string[] args)
     {
-        //verificar a ordem dos argumentos
-        if (args.Length < 5 ||
-            !int.TryParse(args[0], out int nClients) || 
+        if (args.Length < 6 ||
+            !int.TryParse(args[0], out int nClients) ||
             !IPAddress.TryParse(args[1], out IPAddress? ipAddress) ||
             !int.TryParse(args[2], out int port) || !Validacao.PortaValida(port) ||
-            !int.TryParse(args[3], out int nRequisicoes) ||
-            !Enum.TryParse(args[4], out LogLevel currentLogLevel)) 
+            !int.TryParse(args[3], out int nReads) ||
+            !int.TryParse(args[4], out int nWrites) ||
+            !Enum.TryParse(args[5], out LogLevel currentLogLevel) ||
+            (args.Length >= 7 && !ValidateSequence(args[6])))
         {
-            Console.WriteLine("Uso: Client <Numero de Clientes> <Server Ip> <Port> <Numero de Requisicoes> <Log Level>");
+            Console.WriteLine("Uso: Client <Numero de Clientes> <Server Ip> <Porta> <Numero de Reads> <Numero de Writes> <Log Level> <RW/WR/Intercalado>");
             return;
         }
 
         _nClientes = nClients;
         _ipAddress = ipAddress;
         _port = port;
-        _nRequisitos = nRequisicoes;
+        _nReads = nReads;
+        _nWrites = nWrites;
         _currentLogLevel = currentLogLevel;
-
+        _sequence = args.Length >= 7 ? args[6] : "RW";
 
         Thread[] clients = new Thread[_nClientes];
         Random random = new Random();
-        
+
         for (int i = 0; i < _nClientes; i++)
         {
-            int pos = random.Next(0, 100);
+            int pos = random.Next(0, 1000); // Escolher uma posição aleatória
             clients[i] = new Thread(() => StartClient(pos));
             clients[i].Start();
         }
@@ -68,13 +69,7 @@ class Client
         {
             clientThread.Join();
         }
-        
-        Log($"Contador do servidor: {_counter}", LogLevel.Basic);
-        Log($"Soma de todos os valores do vetor: {_soma}", LogLevel.Basic);
-        Log($"Contador do servidor: {_counter}", LogLevel.Info);
-        Log($"Soma de todos os valores do vetor: {_soma}", LogLevel.Info);
     }
-
 
     static void StartClient(int pos)
     {
@@ -86,21 +81,27 @@ class Client
 
                 using (StreamReader inStream = new StreamReader(client.GetStream()))
                 using (StreamWriter outStream = new StreamWriter(client.GetStream()) { AutoFlush = true })
-                    
                 {
-                    outStream.WriteLine(_nRequisitos);
+                    int totalOperations = _nReads + _nWrites;
+                    outStream.WriteLine(totalOperations); // Enviar número total de operações
 
-                    for (int i = 0; i < _nRequisitos; i++)
+                    for (int i = 0; i < totalOperations; i++)
                     {
-                        outStream.WriteLine(pos);
-                        string? response = inStream.ReadLine();
+                        string operation = GetNextOperation(i);
+                        outStream.WriteLine($"{operation} {pos}");
+
+                        string? response = inStream.ReadLine(); // Receber resposta do servidor
                         Log($"Resposta do servidor: {response}", LogLevel.Info);
+
+                        pos = (pos + 1) % 1000; // Incrementa posição para próximas operações
                     }
-                    
-                    string? responseCounter = inStream.ReadLine();
-                    _counter = responseCounter == null ? 0 : int.Parse(responseCounter);
-                    string? responseSoma = inStream.ReadLine();
-                    _soma = responseSoma == null ? 0 : int.Parse(responseSoma);
+
+                    // No final das operações, receber o contador e soma final
+                    string? responseCounter = inStream.ReadLine();  // Receber contador
+                    string? responseSoma = inStream.ReadLine();     // Receber soma final
+
+                    Log($"Contador do servidor: {responseCounter}", LogLevel.Basic);
+                    Log($"Soma final do vetor: {responseSoma}", LogLevel.Basic);
                 }
             }
         }
@@ -108,5 +109,36 @@ class Client
         {
             Log($"Erro no cliente: {e.Message}", LogLevel.Basic);
         }
+    }
+
+    private static string GetNextOperation(int index)
+    {
+        if (_sequence.Equals("RW", StringComparison.OrdinalIgnoreCase))
+        {
+            return index < _nReads ? "READ" : "WRITE";
+        }
+        else if (_sequence.Equals("WR", StringComparison.OrdinalIgnoreCase))
+        {
+            return index < _nWrites ? "WRITE" : "READ";
+        }
+        else
+        {
+            return index % 2 == 0 ? "READ" : "WRITE";
+        }
+    }
+
+    private static bool ValidateSequence(string sequence)
+    {
+        return sequence.Equals("RW", StringComparison.OrdinalIgnoreCase) ||
+               sequence.Equals("WR", StringComparison.OrdinalIgnoreCase) ||
+               sequence.Equals("Intercalado", StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+public static class Validacao
+{
+    public static bool PortaValida(int porta)
+    {
+        return porta > 1024 && porta <= 65535;
     }
 }
