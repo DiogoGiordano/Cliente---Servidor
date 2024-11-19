@@ -2,7 +2,6 @@
 using System.Net.Sockets;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
-using System.Threading;
 
 [Flags]
 public enum LogLevel
@@ -20,6 +19,9 @@ public class ProcessServer
     private static bool useLock = true;
     private static int port;
     private static LogLevel currentLogLevel;
+    private static int completedClients = 0;  // Contador para verificar quando todos os clientes terminaram
+    private static int nClients = 0; // Número de clientes esperado, será setado quando o cliente se conectar
+    private static List<string> clientResults = new List<string>(); // Para armazenar resultados de cada cliente
 
     public static void Log(string message, LogLevel level)
     {
@@ -61,10 +63,22 @@ public class ProcessServer
                 TcpClient clientSocket = server.AcceptTcpClient();
                 Log("Cliente conectado: " + ((IPEndPoint)clientSocket.Client.RemoteEndPoint!)?.Address, LogLevel.None);
 
+                // Incrementa o contador apenas uma vez por cliente
+                lock (accessor)
+                {
+                    counter++;
+                }
+
+                // Definindo o número de clientes baseado nas informações enviadas pelo primeiro cliente
+                if (nClients == 0)
+                {
+                    nClients = 1;
+                }
+
                 // Criar um novo processo para lidar com cada cliente
                 Process process = new Process();
                 process.StartInfo.FileName = "dotnet";  // Caminho do executável do servidor
-                process.StartInfo.Arguments = "client"; // Nome da aplicação cliente ou argumentos necessários
+                process.StartInfo.Arguments = "run";   
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardInput = true;
                 process.StartInfo.RedirectStandardOutput = true;
@@ -75,10 +89,31 @@ public class ProcessServer
                 using (StreamWriter outStream = new StreamWriter(stream) { AutoFlush = true })
                 {
                     int numberOfRequests = int.Parse(inStream.ReadLine()!);
-                    ProcessRequests(inStream, outStream, numberOfRequests);
+                    ProcessRequests(inStream, outStream, numberOfRequests); // Processa requisições do cliente
                     int soma = GetVectorSum();
-                    outStream.WriteLine(counter.ToString());
-                    outStream.WriteLine(soma.ToString());
+
+                    string clientResponse = $"{counter} {soma}";
+                    lock (clientResults)
+                    {
+                        clientResults.Add(clientResponse);  // Adiciona resultado na lista
+                    }
+                }
+
+                // Incrementa o contador de clientes processados
+                lock (accessor)
+                {
+                    completedClients++;
+                }
+
+                // Espera todos os clientes terminarem para exibir o contador e soma final
+                if (completedClients == nClients)  // Verifica se todos os clientes terminaram
+                {
+                    // Exibe a resposta final uma vez, após todos os clientes processados
+                    foreach (var result in clientResults)
+                    {
+                        Log($"Resultado do cliente: {result}", LogLevel.Info);
+                    }
+                    Log($"Contador final do servidor: {counter}", LogLevel.Info);
                 }
 
                 process.WaitForExit();
@@ -148,14 +183,13 @@ public class ProcessServer
             }
         }
 
-        // Após processar todas as requisições, incrementa o contador
-        counter++;
-
-        // Calcular a soma final e enviar apenas uma vez no final
+        // Após processar todas as requisições, apenas enviar o contador e a soma final
         int soma = GetVectorSum();
         outStream.WriteLine(counter.ToString());  // Enviar o contador
         outStream.WriteLine(soma.ToString());    // Enviar a soma final
     }
+
+
     private static int ReadPosition(int pos)
     {
         accessor.Read<int>(pos * sizeof(int), out int value);
@@ -164,19 +198,42 @@ public class ProcessServer
 
     private static void IncrementPosition(int pos)
     {
-        accessor.Read<int>(pos * sizeof(int), out int value);
-        accessor.Write(pos * sizeof(int), value + 1);
+        // Lê o valor atual da posição
+        accessor.Read<int>(pos * sizeof(int), out int valorAtual);
+
+        // Tenta atualizar a posição (se não estiver usando lock, isso pode ser uma operação concorrente)
+        try
+        {
+            // Simula o processamento
+            int valorNovo = valorAtual + 1;
+            accessor.Write(pos * sizeof(int), valorNovo);
+
+            // Log de concorrência se não usar lock
+            if (!useLock)
+            {
+                Log($"Concorrência detectada: Posicao {pos} foi alterada de {valorAtual} para {valorNovo} sem bloqueio.", LogLevel.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Erro de concorrência detectado na posição {pos}: {ex.Message}", LogLevel.Error);
+        }
     }
 
     private static int GetVectorSum()
     {
         int sum = 0;
         long length = accessor.Capacity / sizeof(int);
-        for (long i = 0; i < length; i++)
+
+        lock (accessor)  // Adicionando o lock para sincronizar o acesso ao vetor durante a soma
         {
-            accessor.Read<int>(i * sizeof(int), out int value);
-            sum += value;
+            for (long i = 0; i < length; i++)
+            {
+                accessor.Read<int>(i * sizeof(int), out int value);
+                sum += value;
+            }
         }
+
         return sum;
     }
 }

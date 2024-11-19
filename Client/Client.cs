@@ -1,8 +1,5 @@
 ﻿using System.Net.Sockets;
-using System.IO;
-using System;
 using System.Net;
-using System.Threading;
 using Server_Client;
 
 class Client
