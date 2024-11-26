@@ -1,6 +1,7 @@
 ﻿using System.Net.Sockets;
 using System.IO;
 using System;
+using System.Diagnostics;
 using System.Net;
 using System.Threading;
 using System.Diagnostics;
@@ -31,10 +32,13 @@ class Client
             Console.WriteLine(message);
         }
     }
-
+    
+    
+    
     // Exemplo de uso: dotnet run 10 127.0.0.1 12345 5 5 Info RW
     static void Main(string[] args)
     {
+        
         if (args.Length < 6 ||
             !int.TryParse(args[0], out int nClients) ||
             !IPAddress.TryParse(args[1], out IPAddress? ipAddress) ||

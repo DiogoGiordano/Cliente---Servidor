@@ -1,9 +1,7 @@
-﻿using System;
-using System.IO;
+﻿
 using System.Net;
 using System.Net.Sockets;
-using System.Linq;
-using System.Threading.Tasks;
+using System.Text;
 using Server_Client;
 
 public class SocketSelectorServer
@@ -11,126 +9,148 @@ public class SocketSelectorServer
     private static int[] _vetor;
     private static int _tamanhoVetor;
     private static int _port;
-    private static int _soma;
-    private static int _counter;
-    private static object[] _lockObjects;
-    private static bool _useLock;
-    private static LogLevel _currentLogLevel;
-    private static Teste _teste;
+    private static int _counter = 0;
+    private static int _soma = 0;
+    private static Socket _serverSocket;
+    private static List<Socket> _clientSockets = new List<Socket>();
+    private static object _lock = new object();
 
     public static void Main(string[] args)
     {
-        if (args.Length < 3 || !int.TryParse(args[0], out int tamanhoVetor) || !int.TryParse(args[1], out int port) || !Enum.TryParse(args[2], out Server_Client.LogLevel currentLogLevel) || !bool.TryParse(args[3], out bool useLock))
+        if (args.Length < 4 ||
+            !int.TryParse(args[0], out int tamanhoVetor) ||
+            !int.TryParse(args[1], out int port) ||
+            !Enum.TryParse(args[2], out LogLevel currentLogLevel) ||
+            !bool.TryParse(args[3], out bool useLock))
         {
-            Console.WriteLine("Uso: Client <Tamanho do Vetor> <Port> <Log Level> <Usar Lock>");
+            Console.WriteLine("Uso: Server <Tamanho do Vetor> <Port> <Log Level> <Usar Lock>");
             return;
         }
 
         _tamanhoVetor = tamanhoVetor;
         _port = port;
-        _teste = new Teste(currentLogLevel);
-        _useLock = useLock;
         _vetor = new int[_tamanhoVetor];
-        _lockObjects = new object[_tamanhoVetor];
-
-        for (int i = 0; i < _vetor.Length; i++)
-        { 
-            _lockObjects[i] = new object();
-        }
-        
-        TcpListener server = new TcpListener(IPAddress.Any, port);
-        server.Start();
-        Teste.log("Servidor iniciado na porta " + port, Server_Client.LogLevel.Basic);
 
         try
         {
+            _serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            _serverSocket.Bind(new IPEndPoint(IPAddress.Any, _port));
+            _serverSocket.Listen(10);
+
+            Console.WriteLine($"Servidor iniciado na porta {_port}.");
+
             while (true)
             {
-                TcpClient clientSocket = server.AcceptTcpClient();
-                Teste.log("Cliente conectado: " + ((IPEndPoint)clientSocket.Client.RemoteEndPoint).Address, Server_Client.LogLevel.Info);
-                Task.Run(() => HandleClient(clientSocket));
+                List<Socket> readSockets = new List<Socket>(_clientSockets) { _serverSocket };
+                List<Socket> errorSockets = new List<Socket>(_clientSockets);
+
+                Socket.Select(readSockets, null, errorSockets, 1000);
+
+                foreach (var socket in errorSockets)
+                {
+                    Console.WriteLine("Cliente desconectado devido a erro.");
+                    _clientSockets.Remove(socket);
+                    socket.Close();
+                }
+
+                foreach (var socket in readSockets)
+                {
+                    if (socket == _serverSocket)
+                    {
+                        var clientSocket = _serverSocket.Accept();
+                        _clientSockets.Add(clientSocket);
+                        Console.WriteLine("Novo cliente conectado.");
+                    }
+                    else
+                    {
+                        HandleClient(socket);
+                    }
+                }
             }
         }
         catch (Exception e)
         {
-            Teste.log("Erro no servidor: " + e.Message, Server_Client.LogLevel.Basic);
+            Console.WriteLine($"Erro no servidor: {e.Message}");
         }
         finally
         {
-            server.Stop();
+            _serverSocket?.Close();
         }
     }
 
-    private static void HandleClient(TcpClient clientSocket)
+    private static void HandleClient(Socket clientSocket)
     {
         try
         {
-            using (NetworkStream stream = clientSocket.GetStream())
-            using (StreamReader reader = new StreamReader(stream))
-            using (StreamWriter writer = new StreamWriter(stream) { AutoFlush = true })
+            byte[] buffer = new byte[1024];
+            int bytesRead = clientSocket.Receive(buffer);
+
+            if (bytesRead == 0)
             {
-                int numberOfRequests = int.Parse(reader.ReadLine());
-                if (_useLock)
+                _clientSockets.Remove(clientSocket);
+                clientSocket.Close();
+                return;
+            }
+
+            string request = Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
+            string response;
+
+            if (request.Equals("INIT", StringComparison.OrdinalIgnoreCase))
+            {
+                response = _tamanhoVetor.ToString();
+            }
+            else if (request.StartsWith("REQCOUNT"))
+            {
+                _counter = int.Parse(request.Split(' ')[1]);
+                response = "ACK";
+            }
+            else if (request.StartsWith("READ") || request.StartsWith("WRITE"))
+            {
+                string[] parts = request.Split(' ');
+                if (parts.Length < 2 || !int.TryParse(parts[1], out int pos) || pos < 0 || pos >= _vetor.Length)
                 {
-                    for (int i = 0; i < numberOfRequests; i++)
-                    {
-                        string mensagem = reader.ReadLine();
-                        if (mensagem == null) return;
-
-                        int pos = int.Parse(mensagem);
-
-                        if (pos >= 0 && pos < _vetor.Length)
-                        {
-                            lock (_lockObjects[pos])
-                            {
-                                _vetor[pos]++;
-                                writer.WriteLine(_counter);
-                            }
-                        }
-                        else
-                        {
-                            writer.WriteLine("Erro: posição fora do limite.");
-                        }
-                    }
-                    _counter++;
+                    response = "Erro: posição inválida.";
                 }
                 else
                 {
-                    ProcessRequests(reader, writer, numberOfRequests);
+                    lock (_lock)
+                    {
+                        if (request.StartsWith("READ"))
+                        {
+                            response = $"READ {pos}: {_vetor[pos]}";
+                        }
+                        else if (request.StartsWith("WRITE"))
+                        {
+                            _vetor[pos]++;
+                            _soma = _vetor.Sum();
+                            response = $"WRITE {pos}: {_vetor[pos]}";
+                        }
+                        else
+                        {
+                            response = "Erro: operação desconhecida.";
+                        }
+                    }
                 }
-
-                _soma = _vetor.Sum();
-                writer.WriteLine(_counter);
-                writer.WriteLine(_soma);
             }
-        }
-        catch (IOException e)
-        {
-            Teste.log("Erro na comunicação com o cliente: ", Server_Client.LogLevel.Basic);
-        }
-    }
-
-    private static void ProcessRequests(StreamReader reader, StreamWriter writer, int numberOfRequests)
-    {
-        for (int i = 0; i < numberOfRequests; i++)
-        {
-            string mensagem = reader.ReadLine();
-            if (mensagem == null) return;
-
-            int pos = int.Parse(mensagem);
-
-            if (pos >= 0 && pos < _vetor.Length)
+            else if (request.Equals("RESULT", StringComparison.OrdinalIgnoreCase))
             {
+                lock (_lock)
                 {
-                    _vetor[pos]++;
-                    writer.WriteLine(_counter);
+                    response = $"{_counter}\n{_soma}";
                 }
             }
             else
             {
-                writer.WriteLine("Erro: posição fora do limite.");
+                response = "Erro: comando inválido.";
             }
+
+            clientSocket.Send(Encoding.UTF8.GetBytes(response + "\n"));
         }
-        _counter++;
+        catch (Exception e)
+        {
+            Console.WriteLine($"Erro ao processar cliente: {e.Message}");
+            _clientSockets.Remove(clientSocket);
+            clientSocket.Close();
+        }
     }
 }

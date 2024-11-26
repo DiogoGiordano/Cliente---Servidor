@@ -1,9 +1,8 @@
-﻿using System;
-using System.IO;
+﻿
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading;
-using System.Linq;
+
 using Server_Client;
 
 public class MultiThreadedServer
@@ -11,16 +10,19 @@ public class MultiThreadedServer
     private static int[] _vetor;
     private static int _tamanhoVetor;
     private static int _port;
-    private static int _soma;
     private static int _counter;
+    private static int _soma;
     private static object[] _lockObjects;
     private static bool _useLock;
-    private static LogLevel _currentLogLevel;
-    private static Teste _teste;
+    private static LogClass _logClass;
+    
+    // Exemplo de uso: dotnet run -- 1000 12345 3 true
+    
 
     public static void Main(string[] args)
     {
-        if (args.Length < 3 || 
+        
+        if (args.Length < 4 || 
             !int.TryParse(args[0], out int tamanhoVetor) || 
             !int.TryParse(args[1], out int port) || 
             !Enum.TryParse(args[2], out LogLevel currentLogLevel) || 
@@ -32,7 +34,7 @@ public class MultiThreadedServer
 
         _tamanhoVetor = tamanhoVetor;
         _port = port;
-        _teste = new Teste(currentLogLevel);
+        _logClass = new LogClass(currentLogLevel);
         _useLock = useLock;
         _vetor = new int[_tamanhoVetor];
         _lockObjects = new object[_tamanhoVetor];
@@ -42,21 +44,20 @@ public class MultiThreadedServer
             _lockObjects[i] = new object();
         }
 
-        TcpListener? server = null;
+        TcpListener server = null;
 
         try
         {
             server = new TcpListener(IPAddress.Any, _port);
             server.Start();
-            Teste.log("Servidor iniciado na porta " + _port, LogLevel.Basic);
-            Teste.log("Servidor iniciado na porta " + _port, LogLevel.Info);
+            LogClass.log($"Servidor iniciado na porta {_port}", LogLevel.Basic);
 
-            _counter++;
             while (true)
             {
                 Socket clientSocket = server.AcceptSocket();
-                Teste.log("Cliente conectado: " + ((IPEndPoint)clientSocket.RemoteEndPoint!)?.Address,
-                    LogLevel.Info);
+                _counter++;
+                LogClass.log("Cliente conectado: " + ((IPEndPoint)clientSocket.RemoteEndPoint!).Address, LogLevel.Info);
+                
                 Thread clientThread = new Thread(() => HandleClient(clientSocket));
                 clientThread.Start();
             }
@@ -69,6 +70,7 @@ public class MultiThreadedServer
         {
             server?.Stop();
         }
+        
     }
 
     private static void HandleClient(Socket clientSocket)
@@ -79,6 +81,8 @@ public class MultiThreadedServer
             using (StreamReader inStream = new StreamReader(stream))
             using (StreamWriter outStream = new StreamWriter(stream) { AutoFlush = true })
             {
+                outStream.WriteLine(_tamanhoVetor);
+
                 int numberOfRequests = int.Parse(inStream.ReadLine()!);
 
                 for (int i = 0; i < numberOfRequests; i++)
@@ -100,20 +104,23 @@ public class MultiThreadedServer
                     }
                 }
 
-                // Envia os valores finais (_counter e _soma) para o cliente.
-                outStream.WriteLine(_counter.ToString());
-                outStream.WriteLine(_soma.ToString());
+                lock (_lockObjects)
+                {
+                    outStream.WriteLine(_counter.ToString());
+                    outStream.WriteLine(_soma.ToString());
+                }
             }
         }
         catch (IOException e)
         {
-            Teste.log("Erro na comunicação com o cliente: " + e.Message, LogLevel.Basic);
+            LogClass.log($"Erro na comunicação com o cliente: {e.Message}", LogLevel.Basic);
         }
         finally
         {
-            clientSocket.Close();  // Fechamento do socket do cliente
+            clientSocket.Close();
         }
     }
+
 
     private static void ProcessRequestWithLock(StreamWriter outStream, string operation, int pos)
     {
@@ -128,12 +135,8 @@ public class MultiThreadedServer
                 }
                 else if (operation.Equals("WRITE", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Incrementa o valor no vetor.
                     _vetor[pos] += 1;
-
-                    // Calcula a soma total do vetor
                     _soma = _vetor.Sum();
-
                     outStream.WriteLine($"WRITE {pos}: {_vetor[pos]}");
                 }
             }
@@ -155,12 +158,8 @@ public class MultiThreadedServer
             }
             else if (operation.Equals("WRITE", StringComparison.OrdinalIgnoreCase))
             {
-                // Incrementa o valor no vetor.
                 _vetor[pos] += 1;
-
-                // Calcula a soma total do vetor
                 _soma = _vetor.Sum();
-
                 outStream.WriteLine($"WRITE {pos}: {_vetor[pos]}");
             }
         }
