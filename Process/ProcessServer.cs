@@ -18,6 +18,7 @@ public class ProcessServer
     private static int counter = 0;
     private static bool useLock = true;
     private static int port;
+    private static int vetorSize;
     private static LogLevel currentLogLevel;
     private static int completedClients = 0;  // Contador para verificar quando todos os clientes terminaram
     private static int nClients = 0; // Número de clientes esperado, será setado quando o cliente se conectar
@@ -35,7 +36,7 @@ public class ProcessServer
     {
         // Verificar se os parâmetros necessários foram passados
         if (args.Length < 4 ||
-            !int.TryParse(args[0], out int vetorSize) || 
+            !int.TryParse(args[0], out vetorSize) || 
             !int.TryParse(args[1], out port) ||
             !Enum.TryParse(args[2], out LogLevel logLevel) ||
             !bool.TryParse(args[3], out useLock))
@@ -51,6 +52,7 @@ public class ProcessServer
         currentLogLevel = logLevel;
 
         TcpListener? server = null;
+        List<Process> processes = new List<Process>(); // Lista para armazenar processos
 
         try
         {
@@ -75,49 +77,26 @@ public class ProcessServer
                     nClients = 1;
                 }
 
-                // Criar um novo processo para lidar com cada cliente
+                // Criar um novo processo para o cliente
                 Process process = new Process();
                 process.StartInfo.FileName = "dotnet";  // Caminho do executável do servidor
-                process.StartInfo.Arguments = "run";   
+                process.StartInfo.Arguments = "run";   // Aqui você pode passar outros parâmetros para o processo
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardInput = true;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.Start();
 
-                using (NetworkStream stream = clientSocket.GetStream())
-                using (StreamReader inStream = new StreamReader(stream))
-                using (StreamWriter outStream = new StreamWriter(stream) { AutoFlush = true })
-                {
-                    int numberOfRequests = int.Parse(inStream.ReadLine()!);
-                    ProcessRequests(inStream, outStream, numberOfRequests); // Processa requisições do cliente
-                    int soma = GetVectorSum();
+                // Armazene o processo na lista para controle posterior
+                processes.Add(process);
 
-                    string clientResponse = $"{counter} {soma}";
-                    lock (clientResults)
-                    {
-                        clientResults.Add(clientResponse);  // Adiciona resultado na lista
-                    }
-                }
+                // Criar e processar o cliente em um novo processo
+                Task.Run(() => ProcessClient(clientSocket, process)); // Cria o cliente em paralelo
+            }
 
-                // Incrementa o contador de clientes processados
-                lock (accessor)
-                {
-                    completedClients++;
-                }
-
-                // Espera todos os clientes terminarem para exibir o contador e soma final
-                if (completedClients == nClients)  // Verifica se todos os clientes terminaram
-                {
-                    // Exibe a resposta final uma vez, após todos os clientes processados
-                    foreach (var result in clientResults)
-                    {
-                        Log($"Resultado do cliente: {result}", LogLevel.Info);
-                    }
-                    Log($"Contador final do servidor: {counter}", LogLevel.Info);
-                }
-
-                process.WaitForExit();
-                clientSocket.Close();
+            // Esperar todos os processos terminarem
+            foreach (var proc in processes)
+            {
+                proc.WaitForExit();  // Espera todos os processos finais
             }
         }
         catch (IOException e)
@@ -128,6 +107,50 @@ public class ProcessServer
         {
             server?.Stop();
         }
+    }
+
+    private static void ProcessClient(TcpClient clientSocket, Process process)
+    {
+        using (NetworkStream stream = clientSocket.GetStream())
+        using (StreamReader inStream = new StreamReader(stream))
+        using (StreamWriter outStream = new StreamWriter(stream) { AutoFlush = true })
+        {
+            
+            // Enviar o tamanho do vetor para o cliente
+            outStream.WriteLine(vetorSize);
+
+            
+            int numberOfRequests = int.Parse(inStream.ReadLine()!);
+            ProcessRequests(inStream, outStream, numberOfRequests); // Processa requisições do cliente
+            int soma = GetVectorSum();
+
+            string clientResponse = $"{counter} {soma}";
+            lock (clientResults)
+            {
+                clientResults.Add(clientResponse);  // Adiciona resultado na lista
+            }
+        }
+
+        // Incrementa o contador de clientes processados
+        lock (accessor)
+        {
+            completedClients++;
+        }
+
+        // Espera todos os clientes terminarem para exibir o contador e soma final
+        if (completedClients == nClients)  // Verifica se todos os clientes terminaram
+        {
+            // Exibe a resposta final uma vez, após todos os clientes processados
+            foreach (var result in clientResults)
+            {
+                Log($"Resultado do cliente: {result}", LogLevel.Info);
+            }
+            Log($"Contador final do servidor: {counter}", LogLevel.Info);
+        }
+
+        // Finaliza o processo do cliente
+        process.WaitForExit();
+        clientSocket.Close();
     }
 
     private static void ProcessRequests(StreamReader inStream, StreamWriter outStream, int numberOfRequests)
@@ -188,14 +211,7 @@ public class ProcessServer
         outStream.WriteLine(counter.ToString());  // Enviar o contador
         outStream.WriteLine(soma.ToString());    // Enviar a soma final
     }
-
-
-    private static int ReadPosition(int pos)
-    {
-        accessor.Read<int>(pos * sizeof(int), out int value);
-        return value;
-    }
-
+    
     private static void IncrementPosition(int pos)
     {
         // Lê o valor atual da posição

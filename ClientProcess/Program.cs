@@ -3,6 +3,7 @@ using System.IO;
 using System;
 using System.Net;
 using System.Threading;
+using System.Diagnostics;
 
 [Flags]
 public enum LogLevel
@@ -61,10 +62,13 @@ class Client
         // Variável para armazenar a última resposta de cada cliente
         string lastResponse = string.Empty;
 
+        // Inicia o cronômetro
+        Stopwatch stopwatch = new Stopwatch();
+        stopwatch.Start();
+
         for (int i = 0; i < _nClientes; i++)
         {
-            int pos = random.Next(0, 1000); // Escolher uma posição aleatória
-            clients[i] = new Thread(() => StartClient(pos, ref lastResponse));
+            clients[i] = new Thread(() => StartClient(ref lastResponse));
             clients[i].Start();
         }
 
@@ -73,11 +77,15 @@ class Client
             clientThread.Join();
         }
 
+        // Para o cronômetro e exibe o tempo de execução
+        stopwatch.Stop();
+        Log($"Tempo de execução: {stopwatch.ElapsedMilliseconds} ms", LogLevel.Basic);
+
         // Exibir a última resposta de contador e soma
         Log(lastResponse, LogLevel.Basic);
     }
 
-    static void StartClient(int pos, ref string lastResponse)
+    static void StartClient(ref string lastResponse)
     {
         try
         {
@@ -88,6 +96,18 @@ class Client
                 using (StreamReader inStream = new StreamReader(client.GetStream()))
                 using (StreamWriter outStream = new StreamWriter(client.GetStream()) { AutoFlush = true })
                 {
+                    // Receber o tamanho do vetor do servidor
+                    string? vetorSizeResponse = inStream.ReadLine();
+                    if (!int.TryParse(vetorSizeResponse, out int vetorSize))
+                    {
+                        Log("Erro ao receber o tamanho do vetor do servidor.", LogLevel.Basic);
+                        return;
+                    }
+
+                    // Inicializar a posição aleatória com base no tamanho do vetor
+                    Random random = new Random();
+                    int pos = random.Next(0, vetorSize); 
+
                     int totalOperations = _nReads + _nWrites;
                     outStream.WriteLine(totalOperations); // Enviar número total de operações
 
@@ -99,7 +119,7 @@ class Client
                         string? response = inStream.ReadLine(); // Receber resposta do servidor
                         Log($"Resposta do servidor: {response}", LogLevel.Info);
 
-                        pos = (pos + 1) % 1000; // Incrementa posição para próximas operações
+                        pos = (pos + 1) % vetorSize; // Incrementa posição com base no tamanho do vetor
                     }
 
                     // No final das operações, receber o contador e soma final
