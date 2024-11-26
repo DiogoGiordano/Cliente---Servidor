@@ -1,4 +1,5 @@
-﻿using System.Net.Sockets;
+﻿using System.Diagnostics;
+using System.Net.Sockets;
 using System.Net;
 using Server_Client;
 
@@ -26,6 +27,11 @@ class Client
     // Exemplo de uso: dotnet run -- 100 127.0.0.1 12345 100 100 2 RW
     static void Main(string[] args)
     {
+        
+        Stopwatch stopwatch = new Stopwatch();
+        
+        stopwatch.Start();
+        
         if (!ValidateArguments(args, out string? errorMessage))
         {
             Console.WriteLine(errorMessage);
@@ -47,6 +53,11 @@ class Client
         }
 
         Log($"Resultado final - Contador do servidor: {_counter}, Soma do vetor: {_soma}", LogLevel.Basic);
+        
+        stopwatch.Stop();
+
+        Log($"Tempo de execução: {stopwatch.ElapsedMilliseconds} ms", LogLevel.Basic);
+        
     }
 
     static bool ValidateArguments(string[] args, out string? errorMessage)
@@ -103,7 +114,7 @@ class Client
                             $"Thread {Thread.CurrentThread.ManagedThreadId}: {operation} {_pos} - Resposta do servidor: {response}",
                             LogLevel.Info);
 
-                        _pos = (_pos + 1) % vectorSize; // Garante que o índice não ultrapasse o tamanho do vetor
+                        _pos = (_pos + 1) % vectorSize;
                     }
 
                     string? responseCounter = inStream.ReadLine();

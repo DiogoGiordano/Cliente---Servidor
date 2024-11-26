@@ -1,9 +1,7 @@
-﻿using System;
-using System.IO;
+﻿
 using System.Net;
 using System.Net.Sockets;
-using System.Linq;
-using System.Collections.Generic;
+using System.Text;
 using Server_Client;
 
 public class SocketSelectorServer
@@ -11,12 +9,11 @@ public class SocketSelectorServer
     private static int[] _vetor;
     private static int _tamanhoVetor;
     private static int _port;
-    private static int _counter;
-    private static int _soma;
-    private static object[] _lockObjects;
-    private static bool _useLock;
-    private static Teste _teste;
+    private static int _counter = 0;
+    private static int _soma = 0;
     private static Socket _serverSocket;
+    private static List<Socket> _clientSockets = new List<Socket>();
+    private static object _lock = new object();
 
     public static void Main(string[] args)
     {
@@ -32,15 +29,7 @@ public class SocketSelectorServer
 
         _tamanhoVetor = tamanhoVetor;
         _port = port;
-        _teste = new Teste(currentLogLevel);
-        _useLock = useLock;
         _vetor = new int[_tamanhoVetor];
-        _lockObjects = new object[_tamanhoVetor];
-
-        for (int i = 0; i < _vetor.Length; i++)
-        {
-            _lockObjects[i] = new object();
-        }
 
         try
         {
@@ -48,18 +37,40 @@ public class SocketSelectorServer
             _serverSocket.Bind(new IPEndPoint(IPAddress.Any, _port));
             _serverSocket.Listen(10);
 
-            Teste.log($"Servidor iniciado na porta {_port}", LogLevel.Basic);
+            Console.WriteLine($"Servidor iniciado na porta {_port}.");
 
             while (true)
             {
-                Socket clientSocket = _serverSocket.Accept();
-                Teste.log("Novo cliente conectado.", LogLevel.Info);
-                ThreadPool.QueueUserWorkItem(HandleClient, clientSocket);
+                List<Socket> readSockets = new List<Socket>(_clientSockets) { _serverSocket };
+                List<Socket> errorSockets = new List<Socket>(_clientSockets);
+
+                Socket.Select(readSockets, null, errorSockets, 1000);
+
+                foreach (var socket in errorSockets)
+                {
+                    Console.WriteLine("Cliente desconectado devido a erro.");
+                    _clientSockets.Remove(socket);
+                    socket.Close();
+                }
+
+                foreach (var socket in readSockets)
+                {
+                    if (socket == _serverSocket)
+                    {
+                        var clientSocket = _serverSocket.Accept();
+                        _clientSockets.Add(clientSocket);
+                        Console.WriteLine("Novo cliente conectado.");
+                    }
+                    else
+                    {
+                        HandleClient(socket);
+                    }
+                }
             }
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine("Erro no servidor: " + e.Message);
+            Console.WriteLine($"Erro no servidor: {e.Message}");
         }
         finally
         {
@@ -67,112 +78,79 @@ public class SocketSelectorServer
         }
     }
 
-    private static void HandleClient(object? clientObj)
+    private static void HandleClient(Socket clientSocket)
     {
-        if (clientObj is not Socket clientSocket)
-            return;
-
         try
         {
-            using (NetworkStream networkStream = new NetworkStream(clientSocket))
-            using (StreamReader reader = new StreamReader(networkStream))
-            using (StreamWriter writer = new StreamWriter(networkStream) { AutoFlush = true })
+            byte[] buffer = new byte[1024];
+            int bytesRead = clientSocket.Receive(buffer);
+
+            if (bytesRead == 0)
             {
-                writer.WriteLine(_tamanhoVetor); // Envia o tamanho do vetor
+                _clientSockets.Remove(clientSocket);
+                clientSocket.Close();
+                return;
+            }
 
-                string? requestCountStr = reader.ReadLine();
-                if (!int.TryParse(requestCountStr, out int requestCount))
+            string request = Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
+            string response;
+
+            if (request.Equals("INIT", StringComparison.OrdinalIgnoreCase))
+            {
+                response = _tamanhoVetor.ToString();
+            }
+            else if (request.StartsWith("REQCOUNT"))
+            {
+                _counter = int.Parse(request.Split(' ')[1]);
+                response = "ACK";
+            }
+            else if (request.StartsWith("READ") || request.StartsWith("WRITE"))
+            {
+                string[] parts = request.Split(' ');
+                if (parts.Length < 2 || !int.TryParse(parts[1], out int pos) || pos < 0 || pos >= _vetor.Length)
                 {
-                    Teste.log("Número de requisições inválido.", LogLevel.Basic);
-                    return;
+                    response = "Erro: posição inválida.";
                 }
-
-                for (int i = 0; i < requestCount; i++)
+                else
                 {
-                    string? request = reader.ReadLine();
-                    if (string.IsNullOrEmpty(request))
+                    lock (_lock)
                     {
-                        Teste.log("Requisição inválida recebida.", LogLevel.Basic);
-                        return;
+                        if (request.StartsWith("READ"))
+                        {
+                            response = $"READ {pos}: {_vetor[pos]}";
+                        }
+                        else if (request.StartsWith("WRITE"))
+                        {
+                            _vetor[pos]++;
+                            _soma = _vetor.Sum();
+                            response = $"WRITE {pos}: {_vetor[pos]}";
+                        }
+                        else
+                        {
+                            response = "Erro: operação desconhecida.";
+                        }
                     }
-
-                    string[] parts = request.Split(' ');
-                    if (parts.Length < 2 || !int.TryParse(parts[1], out int pos))
-                    {
-                        writer.WriteLine("Erro: formato da requisição inválido.");
-                        continue;
-                    }
-
-                    string operation = parts[0];
-
-                    if (_useLock)
-                    {
-                        ProcessRequestWithLock(writer, operation, pos);
-                    }
-                    else
-                    {
-                        ProcessRequestWithoutLock(writer, operation, pos);
-                    }
-                }
-
-                // Após processar todas as requisições, envia o contador e a soma
-                lock (_lockObjects)
-                {
-                    writer.WriteLine(_counter.ToString());
-                    writer.WriteLine(_soma.ToString());
                 }
             }
+            else if (request.Equals("RESULT", StringComparison.OrdinalIgnoreCase))
+            {
+                lock (_lock)
+                {
+                    response = $"{_counter}\n{_soma}";
+                }
+            }
+            else
+            {
+                response = "Erro: comando inválido.";
+            }
+
+            clientSocket.Send(Encoding.UTF8.GetBytes(response + "\n"));
         }
         catch (Exception e)
         {
-            Teste.log($"Erro na comunicação com o cliente: {e.Message}", LogLevel.Basic);
-        }
-        finally
-        {
+            Console.WriteLine($"Erro ao processar cliente: {e.Message}");
+            _clientSockets.Remove(clientSocket);
             clientSocket.Close();
-        }
-    }
-
-    private static void ProcessRequestWithLock(StreamWriter writer, string operation, int pos)
-    {
-        if (pos >= 0 && pos < _vetor.Length)
-        {
-            lock (_lockObjects[pos])
-            {
-                ExecuteOperation(writer, operation, pos);
-            }
-        }
-        else
-        {
-            writer.WriteLine("Erro: posição fora do limite.");
-        }
-    }
-
-    private static void ProcessRequestWithoutLock(StreamWriter writer, string operation, int pos)
-    {
-        if (pos >= 0 && pos < _vetor.Length)
-        {
-            ExecuteOperation(writer, operation, pos);
-        }
-        else
-        {
-            writer.WriteLine("Erro: posição fora do limite.");
-        }
-    }
-
-    private static void ExecuteOperation(StreamWriter writer, string operation, int pos)
-    {
-        if (operation.Equals("READ", StringComparison.OrdinalIgnoreCase))
-        {
-            int value = _vetor[pos];
-            writer.WriteLine($"READ {pos}: {value}");
-        }
-        else if (operation.Equals("WRITE", StringComparison.OrdinalIgnoreCase))
-        {
-            _vetor[pos] += 1;
-            _counter++;
-            _soma = _vetor.Sum();
-            writer.WriteLine($"WRITE {pos}: {_vetor[pos]}");
         }
     }
 }

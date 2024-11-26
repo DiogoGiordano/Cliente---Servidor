@@ -9,11 +9,11 @@ public enum LogLevel
     
 }
 
-public class Teste
+public class LogClass
 {
     private static LogLevel _currentLogLevel;
     
-    public Teste(LogLevel level)
+    public LogClass(LogLevel level)
     {
         _currentLogLevel = level;
     }
