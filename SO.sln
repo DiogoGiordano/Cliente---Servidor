@@ -6,8 +6,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Thread", "Thread\Thread.csp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Socket", "Socket\Socket.csproj", "{9672B92A-90B5-4D8B-B9D7-C079473B6A2D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClientProcess", "ClientProcess\ClientProcess.csproj", "{A51651CD-4657-48F6-B5D6-095B32B8A6EC}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Process", "Process\Process.csproj", "{89606531-7C1B-4FA2-B3C6-4D7318A6BF08}"
 EndProject
 Global
@@ -28,10 +26,6 @@ Global
 		{9672B92A-90B5-4D8B-B9D7-C079473B6A2D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9672B92A-90B5-4D8B-B9D7-C079473B6A2D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9672B92A-90B5-4D8B-B9D7-C079473B6A2D}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A51651CD-4657-48F6-B5D6-095B32B8A6EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A51651CD-4657-48F6-B5D6-095B32B8A6EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A51651CD-4657-48F6-B5D6-095B32B8A6EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A51651CD-4657-48F6-B5D6-095B32B8A6EC}.Release|Any CPU.Build.0 = Release|Any CPU
 		{89606531-7C1B-4FA2-B3C6-4D7318A6BF08}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{89606531-7C1B-4FA2-B3C6-4D7318A6BF08}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{89606531-7C1B-4FA2-B3C6-4D7318A6BF08}.Release|Any CPU.ActiveCfg = Release|Any CPU
