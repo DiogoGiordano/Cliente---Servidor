@@ -2,6 +2,8 @@
 using System.Net.Sockets;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using System.Collections.Generic;
+using System.IO;
 
 [Flags]
 public enum LogLevel
@@ -9,6 +11,14 @@ public enum LogLevel
     None = 0,
     Info = 1,
     Error = 2
+}
+
+public enum FileSystemType
+{
+    Ext4,
+    NTFS,
+    ReiserFS,
+    VFAT
 }
 
 public class ProcessServer
@@ -23,6 +33,13 @@ public class ProcessServer
     private static int completedClients = 0;  // Contador para verificar quando todos os clientes terminaram
     private static int nClients = 0; // Número de clientes esperado, será setado quando o cliente se conectar
     private static List<string> clientResults = new List<string>(); // Para armazenar resultados de cada cliente
+    private static Dictionary<int, object> positionLocks = new Dictionary<int, object>(); // Dicionário de bloqueios por posição
+    private static ReaderWriterLockSlim readerWriterLock = new ReaderWriterLockSlim(); // Instância global do ReaderWriterLockSlim
+    private static Dictionary<int, int> cache = new Dictionary<int, int>(); // Cache para armazenar dados lidos
+    private static Queue<int> cacheQueue = new Queue<int>(); // Fila para rastrear a ordem de inserção das posições
+    private static int cacheLimit = 100; // Limite do tamanho do cache (FIFO)
+    private static bool useDiskCache = false; // Se usar o cache de disco
+    private static FileSystemType fileSystemType = FileSystemType.Ext4; // Default file system
 
     public static void Log(string message, LogLevel level)
     {
@@ -35,13 +52,15 @@ public class ProcessServer
     public static void Main(string[] args)
     {
         // Verificar se os parâmetros necessários foram passados
-        if (args.Length < 4 ||
+        if (args.Length < 6 ||
             !int.TryParse(args[0], out vetorSize) || 
             !int.TryParse(args[1], out port) ||
             !Enum.TryParse(args[2], out LogLevel logLevel) ||
-            !bool.TryParse(args[3], out useLock))
+            !bool.TryParse(args[3], out useLock) ||
+            !bool.TryParse(args[4], out useDiskCache) ||
+            !Enum.TryParse(args[5], out fileSystemType))  // Tipo de sistema de arquivos
         {
-            Console.WriteLine("Uso: Server <Tamanho do Vetor> <Porta> <LogLevel> <UsarLock(true/false)>");
+            Console.WriteLine("Uso: Server <Tamanho do Vetor> <Porta> <LogLevel> <UsarLock(true/false)> <UsarCacheDeDisco(true/false)> <TipoDeSistemaDeArquivos>");
             return;
         }
 
@@ -80,7 +99,7 @@ public class ProcessServer
                 // Criar um novo processo para o cliente
                 Process process = new Process();
                 process.StartInfo.FileName = "dotnet";  // Caminho do executável do servidor
-                process.StartInfo.Arguments = "run";   // Aqui você pode passar outros parâmetros para o processo
+                process.StartInfo.Arguments = "run";  
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardInput = true;
                 process.StartInfo.RedirectStandardOutput = true;
@@ -115,11 +134,9 @@ public class ProcessServer
         using (StreamReader inStream = new StreamReader(stream))
         using (StreamWriter outStream = new StreamWriter(stream) { AutoFlush = true })
         {
-            
             // Enviar o tamanho do vetor para o cliente
             outStream.WriteLine(vetorSize);
 
-            
             int numberOfRequests = int.Parse(inStream.ReadLine()!);
             ProcessRequests(inStream, outStream, numberOfRequests); // Processa requisições do cliente
             int soma = GetVectorSum();
@@ -179,8 +196,7 @@ public class ProcessServer
             if (operacao == "READ")
             {
                 // Operação de leitura
-                int valor;
-                accessor.Read(pos * sizeof(int), out valor);
+                int valor = ReadFromCache(pos);
                 outStream.WriteLine($"READ {pos} -> {valor}");
             }
             else if (operacao == "WRITE")
@@ -188,7 +204,7 @@ public class ProcessServer
                 // Operação de escrita
                 if (useLock)
                 {
-                    lock (accessor)
+                    lock (GetPositionLock(pos))
                     {
                         IncrementPosition(pos);
                     }
@@ -211,45 +227,143 @@ public class ProcessServer
         outStream.WriteLine(counter.ToString());  // Enviar o contador
         outStream.WriteLine(soma.ToString());    // Enviar a soma final
     }
-    
+
+    private static object GetPositionLock(int pos)
+    {
+        lock (positionLocks)
+        {
+            if (!positionLocks.ContainsKey(pos))
+            {
+                positionLocks[pos] = new object(); // Criar um bloqueio se não existir
+            }
+        }
+        return positionLocks[pos];
+    }
+
     private static void IncrementPosition(int pos)
     {
-        // Lê o valor atual da posição
-        accessor.Read<int>(pos * sizeof(int), out int valorAtual);
-
-        // Tenta atualizar a posição (se não estiver usando lock, isso pode ser uma operação concorrente)
+        readerWriterLock.EnterWriteLock();  // Bloqueio exclusivo para escrita
         try
         {
-            // Simula o processamento
+            // Lê o valor atual da posição
+            accessor.Read<int>(pos * sizeof(int), out int valorAtual);
+
+            // Tenta atualizar a posição
             int valorNovo = valorAtual + 1;
             accessor.Write(pos * sizeof(int), valorNovo);
 
-            // Log de concorrência se não usar lock
-            if (!useLock)
+            // Atualiza o cache se o cache de disco estiver ativado
+            if (useDiskCache)
             {
-                Log($"Concorrência detectada: Posicao {pos} foi alterada de {valorAtual} para {valorNovo} sem bloqueio.", LogLevel.Error);
+                // Verifica se o cache atingiu o limite
+                if (cache.Count >= cacheLimit)
+                {
+                    int oldestPos = cacheQueue.Dequeue(); // Remove a posição mais antiga
+                    cache.Remove(oldestPos); // Remove do cache
+                }
+
+                cache[pos] = valorNovo;  // Atualiza o cache com o novo valor
+                cacheQueue.Enqueue(pos); // Adiciona a posição à fila (FIFO)
             }
         }
-        catch (Exception ex)
+        finally
         {
-            Log($"Erro de concorrência detectado na posição {pos}: {ex.Message}", LogLevel.Error);
+            readerWriterLock.ExitWriteLock();  // Libera o bloqueio de escrita
         }
     }
 
     private static int GetVectorSum()
     {
-        int sum = 0;
-        long length = accessor.Capacity / sizeof(int);
-
-        lock (accessor)  // Adicionando o lock para sincronizar o acesso ao vetor durante a soma
+        readerWriterLock.EnterReadLock();
+        try
         {
-            for (long i = 0; i < length; i++)
+            int soma = 0;
+            for (int i = 0; i < vetorSize; i++)
             {
-                accessor.Read<int>(i * sizeof(int), out int value);
-                sum += value;
+                accessor.Read<int>(i * sizeof(int), out int valor);
+                soma += valor;
             }
+            return soma;
         }
+        finally
+        {
+            readerWriterLock.ExitReadLock();
+        }
+    }
 
-        return sum;
+    // Função de leitura com cache FIFO e sistemas de arquivos
+    private static int ReadFromCache(int pos)
+    {
+        if (useDiskCache && cache.ContainsKey(pos))
+        {
+            // Se estiver usando o cache de disco, tenta obter o valor do cache
+            return cache[pos];
+        }
+        else
+        {
+            // Caso contrário, lê diretamente do sistema de arquivos simulado
+            int valor;
+            if (fileSystemType == FileSystemType.Ext4)
+            {
+                // Simulação de leitura no sistema de arquivos ext4
+                valor = ReadFromExt4(pos);
+            }
+            else if (fileSystemType == FileSystemType.NTFS)
+            {
+                // Simulação de leitura no sistema de arquivos NTFS
+                valor = ReadFromNTFS(pos);
+            }
+            else if (fileSystemType == FileSystemType.ReiserFS)
+            {
+                // Simulação de leitura no sistema de arquivos ReiserFS
+                valor = ReadFromReiserFS(pos);
+            }
+            else
+            {
+                // Simulação de leitura no sistema de arquivos VFAT
+                valor = ReadFromVFAT(pos);
+            }
+
+            if (useDiskCache)
+            {
+                // Se o cache de disco estiver habilitado, armazena o valor no cache
+                // Primeiro, verificamos se precisamos remover o item mais antigo do cache
+                if (cache.Count >= cacheLimit)
+                {
+                    int oldestPos = cacheQueue.Dequeue(); // Remove a posição mais antiga da fila
+                    cache.Remove(oldestPos);  // Remove a posição mais antiga do cache
+                }
+
+                // Agora, adiciona o novo valor no cache
+                cache[pos] = valor;
+                cacheQueue.Enqueue(pos);  // Adiciona a posição na fila (FIFO)
+            }
+            return valor;
+        }
+    }
+
+    // Métodos simulados para cada tipo de sistema de arquivos
+    private static int ReadFromExt4(int pos)
+    {
+        // Simulação de leitura no sistema de arquivos Ext4
+        return pos * 10;  // Apenas um valor fictício
+    }
+
+    private static int ReadFromNTFS(int pos)
+    {
+        // Simulação de leitura no sistema de arquivos NTFS
+        return pos * 20;  // Apenas um valor fictício
+    }
+
+    private static int ReadFromReiserFS(int pos)
+    {
+        // Simulação de leitura no sistema de arquivos ReiserFS
+        return pos * 30;  // Apenas um valor fictício
+    }
+
+    private static int ReadFromVFAT(int pos)
+    {
+        // Simulação de leitura no sistema de arquivos VFAT
+        return pos * 40;  // Apenas um valor fictício
     }
 }
