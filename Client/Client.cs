@@ -19,7 +19,7 @@ class Client
     private static string _sequence;
     private static int _pos;
 
-    private static UsageMesuarement _usageMesuarement = new();
+    private static UsageMeasurement _usageMesuarement = new();
 
     public static void Log(string message, LogLevel level)
     {
