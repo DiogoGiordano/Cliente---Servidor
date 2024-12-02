@@ -28,7 +28,7 @@ public class MultiThreadedServer
             !Enum.TryParse(args[2], out LogLevel currentLogLevel) || 
             !bool.TryParse(args[3], out bool useLock))
         {
-            Console.WriteLine("Uso: Server <Tamanho do Vetor> <Port> <Log Level> <Usar Lock>");
+            LogClass.log("Uso: Server <Tamanho do Vetor> <Port> <Log Level> <Usar Lock>", LogLevel.Basic);
             return;
         }
 

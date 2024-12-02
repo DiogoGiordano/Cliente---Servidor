@@ -3,6 +3,8 @@ using System.Net.Sockets;
 using System.Net;
 using Server_Client;
 using System.Text.Json;
+using System.Management;
+
 
 class Client
 {
@@ -17,7 +19,7 @@ class Client
     private static string _sequence;
     private static int _pos;
 
-    private static PerformanceMetrics _performanceMetrics = new();
+    private static UsageMesuarement _usageMesuarement = new();
 
     public static void Log(string message, LogLevel level)
     {
@@ -27,6 +29,7 @@ class Client
         }
     }
 
+    // Exemplo de uso: dotnet run -- 100 127.0.0.1 12345 100 100 2 RW
     static void Main(string[] args)
     {
         Stopwatch stopwatch = new Stopwatch();
@@ -39,7 +42,7 @@ class Client
         }
 
         // Inicializa monitoramento
-        _performanceMetrics.StartMonitoring();
+        _usageMesuarement.StartMonitoring();
 
         Thread[] clients = new Thread[_nClientes];
         for (int i = 0; i < _nClientes; i++)
@@ -54,13 +57,14 @@ class Client
         }
 
         stopwatch.Stop();
-        _performanceMetrics.StopMonitoring();
+        _usageMesuarement.StopMonitoring();
 
         Log($"Resultado final - Contador do servidor: {_counter}, Soma do vetor: {_soma}", LogLevel.Basic);
         Log($"Tempo de execução: {stopwatch.ElapsedMilliseconds} ms", LogLevel.Basic);
 
         // Imprime métricas
-        Console.WriteLine(JsonSerializer.Serialize(_performanceMetrics.GetMetricsSummary(), new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine(JsonSerializer.Serialize(_usageMesuarement.GetMetricsSummary(), new JsonSerializerOptions { WriteIndented = true }));
+        
     }
 
     static bool ValidateArguments(string[] args, out string? errorMessage)
@@ -118,7 +122,7 @@ class Client
                         _pos = (_pos + 1) % vectorSize;
 
                         // Adiciona amostras de desempenho
-                        _performanceMetrics.AddSample();
+                        _usageMesuarement.AddSample();
                     }
 
                     string? responseCounter = inStream.ReadLine();
@@ -160,80 +164,3 @@ class Client
     }
 }
 
-public class PerformanceMetrics
-{
-    private List<long> _cpuSamples = new();
-    private List<long> _memorySamples = new();
-    private Process _process;
-    private bool _isMonitoring = false;
-
-    public PerformanceMetrics()
-    {
-        _process = Process.GetCurrentProcess();
-    }
-
-    public void StartMonitoring()
-    {
-        _isMonitoring = true;
-        Task.Run(async () =>
-        {
-            while (_isMonitoring)
-            {
-                AddSample();
-                await Task.Delay(100); // Frequência de amostragem
-            }
-        });
-    }
-
-    public void StopMonitoring()
-    {
-        _isMonitoring = false;
-    }
-
-    public void AddSample()
-    {
-        _cpuSamples.Add((long)_process.TotalProcessorTime.TotalMilliseconds);
-        _memorySamples.Add(_process.WorkingSet64 / (1024 * 1024)); // Memória em MB
-    }
-
-    public object GetMetricsSummary()
-    {
-        return new
-        {
-            CPU = new
-            {
-                Min = _cpuSamples.Min(),
-                Max = _cpuSamples.Max(),
-                Average = _cpuSamples.Average(),
-                Median = GetMedian(_cpuSamples),
-                StdDev = GetStandardDeviation(_cpuSamples)
-            },
-            Memory = new
-            {
-                Min = _memorySamples.Min(),
-                Max = _memorySamples.Max(),
-                Average = _memorySamples.Average(),
-                Median = GetMedian(_memorySamples),
-                StdDev = GetStandardDeviation(_memorySamples)
-            }
-        };
-    }
-    
-    private static double GetMedian(List<long> source)
-    {
-        var sorted = source.OrderBy(x => x).ToList();
-        int count = sorted.Count;
-        if (count == 0) return 0.0; // Evita erro se a lista estiver vazia
-        return count % 2 == 0
-            ? (sorted[count / 2 - 1] + sorted[count / 2]) / 2.0
-            : sorted[count / 2];
-    }
-
-    private static double GetStandardDeviation(List<long> source)
-    {
-        if (source.Count == 0) return 0.0; // Evita divisão por zero
-        double avg = source.Average();
-        return Math.Sqrt(source.Average(v => Math.Pow(v - avg, 2)));
-    }
-
-} 
